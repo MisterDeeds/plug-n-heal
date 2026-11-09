@@ -11,7 +11,11 @@
         (and, for partial-offload models, gpuMinRamGB <= RAM)
       * CPU path (no usable GPU or nothing fits): the best-ranked installed model with tier <= 2 and
         minRamGB <= RAM - 4 GiB
-      * nothing fits: the smallest installed model, reason 'model.reason.weak_hardware'
+      * nothing fits: the smallest installed model whose minRamGB <= RAM, reason 'model.reason.weak_hardware';
+        when RAM is known and not even that exists: no model (Path 'too_weak'), the window says the computer
+        does not have enough memory (error.computer_too_weak)
+      * context length: Get-PnhModelContext (catalogue ctx, capped at 16384 on the CPU), for the chosen model
+        and for every fallback (Candidates), so a step-down never keeps the context of the first model
       * rank ("largest") = minVramGB (most demanding first), then tier, then bytes. This prefers
         qwen3.8:27b over the MoE fast mode on 24 GB cards, the MoE over 9b-q8 on 16 GB cards with 30 GiB+ RAM,
         and 9b-q8 over 9b-q4 whenever it fits. The catalogue 'default' flag only marks the standard profile.
@@ -148,20 +152,61 @@ function New-PnhAdHocModelEntry {
     }
 }
 
+function Get-PnhModelContext {
+    <#
+    .SYNOPSIS
+        num_ctx for a model: its catalogue ctx, capped at 16384 when it runs on the CPU.
+    .DESCRIPTION
+        The one place that decides the context length. Select-PnhModel uses it for the chosen model and for
+        every fallback (Candidates); Ui.ps1 and Run-Headless.ps1 pass the candidate's value per request
+        (Test-PnhModelFit -NumCtx, Invoke-PnhAgent through ModelEntry.ctx), so stepping down never needs an
+        Ollama restart. A missing or invalid ctx counts as 16384.
+    .PARAMETER ModelEntry
+        Catalogue entry (or ad-hoc entry).
+    .PARAMETER UseGpu
+        The model runs on the GPU path. Without it the context is capped at 16384 (RAM and minutes per round
+        on the CPU).
+    .OUTPUTS
+        [int]
+    .EXAMPLE
+        Get-PnhModelContext -ModelEntry $entry -UseGpu:$sel.UseGpu
+    #>
+    [CmdletBinding()]
+    [OutputType([int])]
+    param(
+        [Parameter(Mandatory = $true)][object]$ModelEntry,
+        [switch]$UseGpu
+    )
+    $ctx = 0
+    $raw = Get-PnhValue $ModelEntry 'ctx'
+    if ($null -ne $raw) {
+        try { $ctx = [int]$raw } catch { $ctx = 0 }
+    }
+    if ($ctx -le 0) { $ctx = 16384 }
+    if (-not $UseGpu -and $ctx -gt 16384) { $ctx = 16384 }
+    return $ctx
+}
+
 function Select-PnhModel {
     <#
     .SYNOPSIS
         Chooses the model for this PC from the installed catalogue models.
     .DESCRIPTION
         Returns @{Model=<catalogue entry or $null>; Reason=<i18n key>; Ctx=<int>; UseGpu=<bool>;
-        Fallbacks=@(<entries>); UsableVramGB; RamGB; Path='gpu'|'cpu'|'preferred'|'weak'|'none'}.
+        Fallbacks=@(<entries>); Candidates=@(@{Model; Tag; UseGpu; Ctx}); UsableVramGB; RamGB;
+        Path='gpu'|'cpu'|'preferred'|'weak'|'too_weak'|'none'}.
 
         Reasons (i18n keys): model.reason.gpu, model.reason.cpu, model.reason.preferred,
         model.reason.weak_hardware, model.reason.none_installed.
+        Model is $null for Path 'none' (nothing installed) and 'too_weak' (RAM is known and smaller than the
+        minRamGB of every installed model; the window shows error.computer_too_weak).
 
         Fallbacks are the lower-ranked installed catalogue models that also fit this PC, best first (if none
-        fit, the smallest one), for stepping down after Test-PnhModelFit. To get Ctx/UseGpu for a fallback, call
-        Select-PnhModel again with -Prefer <fallback tag>.
+        fit, the smallest one), for stepping down after Test-PnhModelFit.
+        Candidates is the step-down list ready to use: the chosen model first, then every fallback, each with
+        its own UseGpu (GPU rule of this PC) and Ctx (Get-PnhModelContext). Candidates[i].Model is a copy of
+        the catalogue entry whose ctx is already that value: pass it to Test-PnhModelFit (-ModelEntry,
+        -NumCtx, -UseGpu) and to Invoke-PnhAgent as is.
         Ctx is the catalogue ctx, capped at 16384 when the model will run on the CPU.
     .PARAMETER Hardware
         Result of Get-PnhHardware (hashtable or the same shape as PSCustomObject).
@@ -253,16 +298,25 @@ function Select-PnhModel {
         foreach ($e in $ranked) { if (& $fitsCpu $e) { $model = $e; $reason = 'model.reason.cpu'; $path = 'cpu'; break } }
     }
     if ($null -eq $model -and $ranked.Count -gt 0) {
-        $model = @($ranked | Sort-Object -Property @{ Expression = { [double](Get-PnhValue $_ 'bytes' 0) } })[0]
+        # Nothing fits the rules: the smallest model that can be loaded at all (minRamGB <= RAM, without the
+        # 4 GiB reserve of the CPU rule). Unknown RAM (detection failed) cannot rule anything out.
+        $bySize = @($ranked | Sort-Object -Property @{ Expression = { [double](Get-PnhValue $_ 'bytes' 0) } })
+        if ($ramGB -gt 0) { $bySize = @($bySize | Where-Object { [double](Get-PnhValue $_ 'minRamGB' 0) -le $ramGB }) }
         $reason = 'model.reason.weak_hardware'
-        $path = 'weak'
+        if ($bySize.Count -gt 0) {
+            $model = $bySize[0]
+            $path = 'weak'
+        } else {
+            $path = 'too_weak'
+            Write-PnhLog -Level Warn -Message ('No installed model fits into ' + $ramGB + ' GiB RAM')
+        }
     }
 
     $ctx = 0
     $fallbacks = @()
+    $candidateList = New-Object System.Collections.ArrayList
     if ($null -ne $model) {
-        $ctx = [int](Get-PnhValue $model 'ctx' 16384)
-        if (-not $useGpu -and $ctx -gt 16384) { $ctx = 16384 }
+        $ctx = Get-PnhModelContext -ModelEntry $model -UseGpu:$useGpu
         $chosenRank = Get-PnhModelRank -Entry $model
         $chosenTag = [string](Get-PnhValue $model 'tag' '')
         $smaller = @($ranked | Where-Object { [string](Get-PnhValue $_ 'tag' '') -ne $chosenTag -and (Get-PnhModelRank -Entry $_) -lt $chosenRank })
@@ -270,6 +324,20 @@ function Select-PnhModel {
         if ($fallbacks.Count -eq 0 -and $smaller.Count -gt 0) {
             $fallbacks = @($smaller | Sort-Object -Property @{ Expression = { [double](Get-PnhValue $_ 'bytes' 0) } } | Select-Object -First 1)
         }
+        $newCandidate = {
+            param($Entry, [bool]$Gpu)
+            $c = Get-PnhModelContext -ModelEntry $Entry -UseGpu:$Gpu
+            $copy = [ordered]@{}
+            if ($Entry -is [System.Collections.IDictionary]) {
+                foreach ($k in @($Entry.Keys)) { $copy[[string]$k] = $Entry[$k] }
+            } else {
+                foreach ($prop in $Entry.PSObject.Properties) { $copy[$prop.Name] = $prop.Value }
+            }
+            $copy['ctx'] = $c
+            return @{ Model = [pscustomobject]$copy; Tag = [string](Get-PnhValue $Entry 'tag' ''); UseGpu = $Gpu; Ctx = $c }
+        }
+        $null = $candidateList.Add((& $newCandidate $model $useGpu))
+        foreach ($fb in $fallbacks) { $null = $candidateList.Add((& $newCandidate $fb ([bool](& $fitsGpu $fb)))) }
     }
 
     $result = @{
@@ -278,6 +346,7 @@ function Select-PnhModel {
         Ctx          = $ctx
         UseGpu       = $useGpu
         Fallbacks    = $fallbacks
+        Candidates   = @($candidateList.ToArray())
         UsableVramGB = $usableVram
         RamGB        = $ramGB
         Path         = $path
@@ -285,8 +354,9 @@ function Select-PnhModel {
     $logTag = $null
     if ($null -ne $model) { $logTag = Get-PnhValue $model 'tag' }
     Write-PnhLog -Message 'Model selected' -Data @{
-        Tag = $logTag; Reason = $reason; Ctx = $ctx; UseGpu = $useGpu; UsableVramGB = $usableVram; RamGB = $ramGB
-        Installed = @($Installed); Fallbacks = @($fallbacks | ForEach-Object { Get-PnhValue $_ 'tag' })
+        Tag = $logTag; Reason = $reason; Path = $path; Ctx = $ctx; UseGpu = $useGpu; UsableVramGB = $usableVram; RamGB = $ramGB
+        Installed = @($Installed)
+        Fallbacks = @($candidateList | Select-Object -Skip 1 | ForEach-Object { '{0} (gpu={1}, ctx={2})' -f $_.Tag, $_.UseGpu, $_.Ctx })
     }
     return $result
 }

@@ -78,11 +78,11 @@ $script:PnhBuildText = @{
         'fat.text'            = "Die SSD ist mit «{0}» formatiert. Darauf passen keine Dateien über 4 GB, die Sprachmodelle sind aber grösser.`r`n`r`nSo formatieren Sie die SSD mit exFAT. ACHTUNG: Dabei wird ALLES auf der SSD gelöscht.`r`n`r`n1. Wichtige Dateien von der SSD zuerst anderswo sichern.`r`n2. Im Explorer mit der rechten Maustaste auf die SSD klicken und «Formatieren ...» wählen.`r`n3. Dateisystem: exFAT. Volumebezeichnung: PLUGNHEAL. «Schnellformatierung» angehakt lassen.`r`n4. «Starten» klicken und bestätigen.`r`n5. Danach diesen Helfer noch einmal starten.`r`n`r`nPlug'n'Heal formatiert nie selbst."
         'profile.heading'     = '2. Wie viel soll auf die SSD?'
         'profile.small'       = 'Klein, etwa {0}'
-        'profile.small.text'  = 'Für ältere und einfache PCs und Notebooks ohne eigene Grafikkarte. Braucht eine SSD ab {0} GB.'
+        'profile.small.text'  = 'Die zwei kleinen Modelle 2B und 4B ({1}). Genügt für PCs ohne eigene Grafikkarte und für Grafikkarten bis 8 GB. Mit einer grösseren Grafikkarte läuft dann auch nur das 4B. Braucht eine SSD ab {0} GB.'
         'profile.standard'    = 'Standard, etwa {0} (empfohlen)'
-        'profile.standard.text' = 'Für die meisten PCs und Notebooks, auch mit einer Grafikkarte bis 16 GB. Braucht eine SSD ab {0} GB.'
+        'profile.standard.text' = 'Wie «Klein», dazu 9B für Grafikkarten ab 10 GB und 27B für Grafikkarten ab 24 GB ({1} mehr). Passt für fast jeden PC. Braucht eine SSD ab {0} GB.'
         'profile.full'        = 'Vollständig, etwa {0}'
-        'profile.full.text'   = 'Alle Modelle, auch für starke PCs mit grosser Grafikkarte (24 bis 32 GB). Braucht eine SSD ab {0} GB.'
+        'profile.full.text'   = 'Wie «Standard», dazu zwei Modelle ({1} mehr), die nur PCs mit einer Grafikkarte mit 16 oder 20 GB nützen: das 9B in höherer Genauigkeit und ein schnelles Modell, das zusätzlich 32 GB Arbeitsspeicher braucht. Braucht eine SSD ab {0} GB.'
         'profile.free'        = 'Auf der SSD {0} sind {1} frei.'
         'profile.tooBig'      = 'Diese Auswahl passt nicht auf die SSD. Bitte eine kleinere Auswahl oder eine grössere SSD nehmen.'
         'btn.next'            = 'Weiter'
@@ -162,11 +162,11 @@ $script:PnhBuildText = @{
         'fat.text'            = "The SSD is formatted with ""{0}"". It cannot hold files larger than 4 GB, and the language models are larger.`r`n`r`nHow to format the SSD with exFAT. CAUTION: this ERASES everything on the SSD.`r`n`r`n1. Copy important files from the SSD somewhere else first.`r`n2. In File Explorer, right-click the SSD and choose ""Format ..."".`r`n3. File system: exFAT. Volume label: PLUGNHEAL. Keep ""Quick Format"" ticked.`r`n4. Click ""Start"" and confirm.`r`n5. Then start this helper again.`r`n`r`nPlug'n'Heal never formats a drive by itself."
         'profile.heading'     = '2. How much should go onto the SSD?'
         'profile.small'       = 'Small, about {0}'
-        'profile.small.text'  = 'For older and simple PCs and laptops without their own graphics card. Needs an SSD of {0} GB or more.'
+        'profile.small.text'  = 'The two small models, 2B and 4B ({1}). Enough for PCs without their own graphics card and for graphics cards up to 8 GB. A larger graphics card then also runs only the 4B. Needs an SSD of {0} GB or more.'
         'profile.standard'    = 'Standard, about {0} (recommended)'
-        'profile.standard.text' = 'For most PCs and laptops, also with a graphics card up to 16 GB. Needs an SSD of {0} GB or more.'
+        'profile.standard.text' = 'Like "Small", plus 9B for graphics cards from 10 GB and 27B for graphics cards with 24 GB or more ({1} more). Right for almost every PC. Needs an SSD of {0} GB or more.'
         'profile.full'        = 'Full, about {0}'
-        'profile.full.text'   = 'All models, also for strong PCs with a big graphics card (24 to 32 GB). Needs an SSD of {0} GB or more.'
+        'profile.full.text'   = 'Like "Standard", plus two models ({1} more) that only help PCs with a 16 or 20 GB graphics card: the 9B in higher precision, and a fast model that also needs 32 GB of RAM. Needs an SSD of {0} GB or more.'
         'profile.free'        = 'The SSD {0} has {1} free.'
         'profile.tooBig'      = 'This choice does not fit on the SSD. Please pick a smaller choice or a larger SSD.'
         'btn.next'            = 'Next'
@@ -482,6 +482,30 @@ function Get-PnhSuggestedDriveGB {
         if ($gb * 1e9 * 0.93 -ge $Bytes) { return $gb }
     }
     return 8000
+}
+
+function Get-PnhProfileOption {
+    # wizard page 2, one profile: bytes on the drive (models + unpacked runtime + reserve, the same sum the space
+    # check uses), suggested SSD size, radio title and explanation; the explanation names the model bytes this
+    # profile adds to the next smaller one (small: all of its models)
+    param([Parameter(Mandatory)]$Catalog, [Parameter(Mandatory)]$Versions, [Parameter(Mandatory)][string]$Name)
+    $order = @('small', 'standard', 'full')
+    $models = [int64](Get-PnhProfileBytes -Catalog $Catalog -Name $Name)
+    $added = $models
+    $i = [array]::IndexOf($order, $Name)
+    if ($i -gt 0) {
+        try { $added = $models - [int64](Get-PnhProfileBytes -Catalog $Catalog -Name $order[$i - 1]) } catch { $added = $models }
+    }
+    $total = $models + [int64]$Versions.ollama.extractedBytes + [int64]$Versions.reserveBytes
+    $gb = Get-PnhSuggestedDriveGB -Bytes $total
+    return [pscustomobject]@{
+        Name       = $Name
+        ModelBytes = $models
+        DriveBytes = $total
+        DriveGB    = $gb
+        Title      = (Get-PnhBuildText "profile.$Name" @((Format-PnhBytes $total)))
+        Text       = (Get-PnhBuildText "profile.$Name.text" @($gb, (Format-PnhBytes ([math]::Max([int64]0, $added)))))
+    }
 }
 
 function Split-PnhModelTag {
@@ -1043,6 +1067,40 @@ function Copy-PnhApp {
     Copy-Item -LiteralPath $startCmd -Destination $Paths.StartCmd -Force
 }
 
+function Unblock-PnhDriveFiles {
+    # Removes the Mark-of-the-Web (Zone.Identifier stream) from <drive>\PlugNHeal and <drive>\START.cmd. Files
+    # copied from a downloaded ZIP that was not unblocked keep that mark on an NTFS drive, and Windows then warns
+    # or blocks when START.cmd is double-clicked (security warning, SmartScreen). exFAT has no alternate data
+    # streams, so there it changes nothing. Best effort: never fails the build; returns the number of files
+    # handed to Unblock-File.
+    param([Parameter(Mandatory)]$Paths)
+    if (-not (Get-Command -Name Unblock-File -ErrorAction SilentlyContinue)) {
+        Write-PnhBuildLog -Message 'Unblock-File is not available here, Mark-of-the-Web not checked'
+        return 0
+    }
+    $files = New-Object System.Collections.Generic.List[string]
+    try {
+        if (Test-Path -LiteralPath $Paths.Root -PathType Container) {
+            foreach ($f in @(Get-ChildItem -LiteralPath $Paths.Root -Recurse -File -Force -ErrorAction SilentlyContinue)) { $files.Add($f.FullName) }
+        }
+        if (Test-Path -LiteralPath $Paths.StartCmd -PathType Leaf) { $files.Add($Paths.StartCmd) }
+        $failed = 0
+        $firstError = ''
+        foreach ($f in $files) {
+            Assert-PnhPathAllowed -Path $f -Paths $Paths
+            try { Unblock-File -LiteralPath $f -ErrorAction Stop } catch {
+                $failed++
+                if (-not $firstError) { $firstError = "$f`: $($_.Exception.Message)" }
+            }
+        }
+        # one log line, no warning event: on exFAT a failure only means there is no stream to remove
+        Write-PnhBuildLog -Message "Mark-of-the-Web removed where present: $($files.Count) files checked, $failed not unblocked $firstError"
+    } catch {
+        Write-PnhBuildLog -Level Warn -Message "Unblock-File skipped: $($_.Exception.Message)"
+    }
+    return $files.Count
+}
+
 # ---------------------------------------------------------------------------------------------------------------------
 # Models: registry manifests, Ollama on the drive, /api/pull, verification
 # ---------------------------------------------------------------------------------------------------------------------
@@ -1358,6 +1416,7 @@ function Invoke-PnhBuild {
     # App
     Send-PnhPhase 'phase.app'
     Copy-PnhApp -Paths $paths -SourceDir $srcDir
+    [void](Unblock-PnhDriveFiles -Paths $paths)
 
     # Models through Ollama itself (resume and digest check included)
     $toPull = @($plan | Where-Object { -not $_.Complete })
@@ -1538,7 +1597,7 @@ function Show-PnhBuildWizard {
     foreach ($name in @('small', 'standard', 'full')) {
         $rb = & $mk 'RadioButton' 20 $y 720 30 ''
         $rb.Font = $fontBold; $rb.Tag = $name
-        $lt = & $mk 'Label' 44 ($y + 30) 690 46 ''
+        $lt = & $mk 'Label' 44 ($y + 30) 690 62 ''
         $lt.ForeColor = $grey
         $radios[$name] = $rb; $radioTexts[$name] = $lt
         $pProfile.Controls.AddRange(@($rb, $lt))
@@ -1640,16 +1699,15 @@ function Show-PnhBuildWizard {
         $paths = Get-PnhBuildPaths -DriveRoot $d.Root
         $existing = Get-PnhExistingBuildBytes -Paths $paths
         $available = [int64]$d.FreeBytes + $existing
-        $extra = [int64]$ui2.Versions.ollama.extractedBytes + [int64]$ui2.Versions.reserveBytes
         $ui2.Fits = @{}
         foreach ($name in @('small', 'standard', 'full')) {
             $rb = $c.radios[$name]
             try {
-                $bytes = (Get-PnhProfileBytes -Catalog $ui2.Catalog -Name $name) + $extra
-                $rb.Text = Get-PnhBuildText "profile.$name" @((Format-PnhBytes $bytes))
-                $c.radioTexts[$name].Text = Get-PnhBuildText "profile.$name.text" @((Get-PnhSuggestedDriveGB -Bytes $bytes))
+                $opt = Get-PnhProfileOption -Catalog $ui2.Catalog -Versions $ui2.Versions -Name $name
+                $rb.Text = $opt.Title
+                $c.radioTexts[$name].Text = $opt.Text
                 $rb.Enabled = $true
-                $ui2.Fits[$name] = ($bytes -le $available)
+                $ui2.Fits[$name] = ($opt.DriveBytes -le $available)
             } catch {
                 $rb.Text = $name; $rb.Enabled = $false; $c.radioTexts[$name].Text = Get-PnhErrorText $_; $ui2.Fits[$name] = $false
             }

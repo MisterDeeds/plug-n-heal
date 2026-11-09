@@ -41,6 +41,7 @@ fit the action's schema; the toolbox validates again before it runs anything.
 | Situation | Asked? |
 |---|---|
 | Catalogue action with `confirm: true`, risk medium or high, or a restart | yes, the toolbox asks before it runs |
+| Any changing catalogue action while the smallest model works (`confirmAllChanges`, tier 1) | yes, whatever the action's own rule says |
 | Other catalogue actions (low risk, backed up, reversible) | no |
 | `run_powershell` with a read-only command | no |
 | `run_powershell` with any other command | yes; a restore point is attempted first |

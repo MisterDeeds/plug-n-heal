@@ -1187,8 +1187,12 @@ function Invoke-PnhAgentToolCall {
             }
             Send-PnhAgentEvent -St $St -Payload @{ Type = 'action'; Id = $entry.ActionId; Title = $entry.Title }
             $r = $null
+            $actionArgs = @{ Id = $entry.ActionId; Parameters = $callArgs; RunFolder = $St.RunFolder; Confirm = $St.Confirm }
+            # Small models (confirmAllChanges / tier 1) ask before every change, whatever the action's own rule says;
+            # Test-PnhConfirmRequired decides what counts as a change.
+            if ($St.ConfirmAll) { $actionArgs['ForceConfirm'] = $true }
             try {
-                $r = Invoke-PnhAction -Id $entry.ActionId -Parameters $callArgs -RunFolder $St.RunFolder -Confirm $St.Confirm
+                $r = Invoke-PnhAction @actionArgs
             } catch {
                 $r = @{ Id = $entry.ActionId; Ok = $false; Verified = $false; Declined = $false; Output = ''; Error = $_.Exception.Message; RolledBack = $false; NeedsReboot = $false }
             }
@@ -1424,6 +1428,11 @@ function Invoke-PnhAgent {
         Solved is $true only when the category success check passed at the end (and the problem existed before or a
         verified change was made). Never throws; errors end with StoppedReason 'error'.
         Writes chat.jsonl, diagnose.json and summary.txt into -RunFolder and logs actions with Write-PnhLog.
+    .PARAMETER ModelEntry
+        Catalogue entry of the model (Select-PnhModel Candidates[i].Model). Its ctx is the num_ctx of every request
+        (the server's ContextLength only when ctx is missing), so a fallback model keeps its own context length.
+        Models with confirmAllChanges = true (or tier 1) ask before every changing catalogue action, also when the
+        action itself would not ask (Invoke-PnhAction -ForceConfirm).
     .PARAMETER Confirm
         Callback (not ShouldProcess): gets @{Title; Explain; Risk; Reboot; Kind} and returns $true or $false.
     .PARAMETER OnEvent
@@ -1451,8 +1460,10 @@ function Invoke-PnhAgent {
         if (Get-Command -Name Get-PnhLanguage -ErrorAction SilentlyContinue) { try { $lang = [string](Get-PnhLanguage) } catch { Write-Verbose ('Agent: ' + $_.Exception.Message) } }
     }
     if ($lang -notin @('de', 'en')) { $lang = 'en' }
-    $numCtx = [int](Get-PnhAgentMember -Object $Server -Name 'ContextLength')
-    if ($numCtx -le 0) { $numCtx = [int](Get-PnhAgentMember -Object $ModelEntry -Name 'ctx') }
+    # num_ctx belongs to the model (Get-PnhModelContext via Select-PnhModel Candidates), not to the server: after a
+    # step-down the server still has the first model's OLLAMA_CONTEXT_LENGTH, so the entry's ctx goes with each request.
+    $numCtx = [int](Get-PnhAgentMember -Object $ModelEntry -Name 'ctx')
+    if ($numCtx -le 0) { $numCtx = [int](Get-PnhAgentMember -Object $Server -Name 'ContextLength') }
     if ($numCtx -le 0) { $numCtx = 16384 }
     $chatTimeout = [int](Get-PnhAgentMember -Object $ModelEntry -Name 'timeoutSeconds')
     if ($chatTimeout -le 0) { $chatTimeout = 600 }
@@ -1464,6 +1475,7 @@ function Invoke-PnhAgent {
         NumCtx = $numCtx; ChatTimeout = $chatTimeout
         RunFolder = $RunFolder; ChatLog = $null; OnEvent = $OnEvent; Confirm = $Confirm
         ReadOnly = [bool]$ReadOnly; Category = $Category; Tier = [int](Get-PnhAgentMember -Object $ModelEntry -Name 'tier')
+        ConfirmAll = (((Get-PnhAgentMember -Object $ModelEntry -Name 'confirmAllChanges') -eq $true) -or ([int](Get-PnhAgentMember -Object $ModelEntry -Name 'tier') -eq 1))
         WouldHelp = (New-Object System.Collections.Generic.List[string]); OfferedChanging = @()
         Messages = (New-Object System.Collections.Generic.List[object])
         Actions = (New-Object System.Collections.Generic.List[object])
@@ -1483,7 +1495,7 @@ function Invoke-PnhAgent {
     $topic = $Category
     $solved = $false
     $started = Get-Date
-    Write-PnhAgentLog -Message 'Agent starts' -Data @{ category = $Category; model = $St.Model; think = $St.Think; freeShell = $St.FreeShell; language = $lang; maxRounds = $MaxRounds; readOnly = [bool]$ReadOnly }
+    Write-PnhAgentLog -Message 'Agent starts' -Data @{ category = $Category; model = $St.Model; think = $St.Think; freeShell = $St.FreeShell; language = $lang; maxRounds = $MaxRounds; readOnly = [bool]$ReadOnly; numCtx = $numCtx; confirmAllChanges = $St.ConfirmAll }
 
     try {
         # --- category and diagnosis ------------------------------------------------------------------------------

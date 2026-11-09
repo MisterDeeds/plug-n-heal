@@ -33,10 +33,11 @@ only the candidates of the codes that are set, plus the read-only diagnostics of
 | `tests/Catalog.Tests.ps1` | schema and safety tests of the three JSON files |
 | `tests/Toolbox.Tests.ps1`, `tests/Diagnose.Tests.ps1` | engine and diagnosis tests |
 
-**Encoding.** All `.ps1` files are UTF-8 **with BOM**: Windows PowerShell 5.1 reads BOM-less files as ANSI and would
-garble any non-ASCII character. The `.ps1` files are additionally kept ASCII-only, and so is every PowerShell block inside
-`actions.json` (a test enforces this). The JSON files are UTF-8 without BOM (RFC 8259) and are read with an explicit
-UTF-8 decoder (`[IO.File]::ReadAllText(..., UTF8)`), never with `Get-Content` without `-Encoding`.
+**Encoding.** Every `.ps1` file is either ASCII-only or UTF-8 **with BOM**: Windows PowerShell 5.1 reads BOM-less files
+as ANSI and would garble any non-ASCII character (the CI lint job enforces this rule). Files that contain German text,
+such as `src/lib/Agent.ps1`, carry the BOM; the others are plain ASCII. Every PowerShell block inside `actions.json` is
+ASCII-only (a test enforces this). The JSON files are UTF-8 without BOM (RFC 8259) and are read with an explicit UTF-8
+decoder (`[IO.File]::ReadAllText(..., UTF8)`), never with `Get-Content` without `-Encoding`.
 
 ## 3. Action schema (`actions.json`)
 
@@ -126,7 +127,8 @@ Parameter values must come from detection, never from the model's imagination. T
 
 ```
 Invoke-PnhAction -Id <id> -Parameters <hashtable> -RunFolder <dir> -Confirm <scriptblock>
-                 [-Language de|en] [-Flags <codes>] [-AllowExperimental] [-SkipChoiceCheck] [-Action <entry>]
+                 [-Language de|en] [-Flags <codes>] [-AllowExperimental] [-SkipChoiceCheck] [-ForceConfirm]
+                 [-Action <entry>]
 ```
 
 1. Look up the action; refuse experimental actions without `-AllowExperimental`.
@@ -134,7 +136,9 @@ Invoke-PnhAction -Id <id> -Parameters <hashtable> -RunFolder <dir> -Confirm <scr
 3. Refuse a changing action that a set stop finding blocks (`-Flags`; the agent applies the same blocks itself).
 4. Refuse when administrator rights are missing, or when a `context = user` change would run under another account.
 5. Check parameter values against the detection.
-6. **Confirmation rule**: ask when `confirm = true` OR `risk` is medium/high OR `reboot` OR `deletes`. The `Confirm`
+6. **Confirmation rule** (`Test-PnhConfirmRequired`): ask when `confirm = true` OR `risk` is medium/high OR `reboot`
+   OR `deletes`; with `-ForceConfirm` also for every action with `changes = true`. The agent sets `-ForceConfirm` for
+   models with `confirmAllChanges` (the tier-1 model, whose tool use is weak). It only adds questions. The `Confirm`
    scriptblock gets `@{Id; Title; Explain; Risk; Reboot; Deletes; Parameters}` and must return exactly `$true`. Anything
    else, an exception, or a missing scriptblock means "declined": nothing runs, `Declined = $true`.
 7. Before the **first changing action of a run**: `New-PnhRestorePoint` (once per run folder; later calls reuse the

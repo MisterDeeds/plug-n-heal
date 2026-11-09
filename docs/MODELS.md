@@ -33,6 +33,7 @@ Sizes are decimal GB (10^9 bytes); the exact byte counts are in `models.json`. `
 | `ctx` | context length (`num_ctx`); capped at 16384 when a model runs on the CPU |
 | `think` | default of Ollama's `think` flag; off for tiers 1–3 (thinking costs minutes on a CPU), on for tier 4. Not yet A/B tested. |
 | `freeShell` | the model may propose its own PowerShell commands, filtered and confirmed (see [SAFETY.md](SAFETY.md)) |
+| `confirmAllChanges` | optional; every changing action needs the user's "Yes", also when the action itself would not ask. Set for the 2B (tier 1), whose tool use is weak |
 | `default` | part of the `standard` profile |
 
 ### Profiles
@@ -60,9 +61,12 @@ formatted capacity (about 93 %) holds it; the Windows builder computes and shows
    it uses its catalogue `ctx`.
 4. **CPU path:** otherwise the first ranked model with `tier` ≤ 2 and `minRamGB` ≤ RAM − 4 GiB; `ctx` is capped at
    16384. Dense models above 4B are never run on the CPU: they would be far too slow.
-5. **Weak hardware:** if nothing fits, the smallest installed model is used anyway (the window says the computer is
-   rather weak).
-6. **Fallbacks:** the lower-ranked installed models that also fit, best first (if none fits, the smallest).
+5. **Weak hardware:** if nothing fits, the smallest installed model whose `minRamGB` is at most the RAM is used anyway
+   (the window says the computer is rather weak). If the RAM is smaller than every installed model needs, no model
+   is chosen and the window says the computer does not have enough memory.
+6. **Fallbacks:** the lower-ranked installed models that also fit, best first (if none fits, the smallest). Each
+   fallback gets its own placement (GPU or CPU) and its own `ctx` (`Get-PnhModelContext`, capped at 16384 on the CPU);
+   `Select-PnhModel` returns them as `Candidates`, in step-down order.
 
 `-Prefer <tag>` (used by `Run-Headless.ps1 -Model`) overrides the rule for an installed tag.
 
@@ -87,10 +91,21 @@ With the `standard` profile a 16 GB card gets `qwen3.5:9b-q4_K_M`, because the t
 
 ### Step 2: measurement (`Test-PnhModelFit`)
 
-The window starts Ollama, loads the chosen model and lets it generate 48 tokens ("Count from 1 to 60"). Then it reads
-`/api/ps`. The model passes when there is no error and it generates at least **5 tokens per second** (a 300-token
-round then takes about a minute). If not, the next fallback is tried. If none passes, the window says the computer
-is too slow. Loading a large model from a USB drive can take a while; the test allows up to 300 seconds.
+The window starts Ollama, loads the chosen model with the context length it will use and lets it generate 48 tokens
+("Count from 1 to 60"). Then it reads `/api/ps`. The model passes when there is no error and (`Get-PnhFitThreshold`):
+
+| Tier | Minimum speed | On the GPU (only when chosen for the GPU) |
+|---|---|---|
+| 1–2 (and models outside the catalogue) | 5 tokens per second (a 300-token round takes about a minute) | not checked |
+| 3 | 10 tokens per second | at least 90 % (`size_vram / size`) |
+| 4 | 15 tokens per second (thinking rounds are long) | at least 90 %, except `partialOffload` models |
+
+On the CPU path only the speed counts. Below 90 % on the GPU, Ollama has moved layers to the CPU (VRAM used by another
+program, or `minVramGB` too low), which costs far more than the short test shows. The speed values are set from the
+catalogue's reasoning, not yet from measurements on real PCs. If the model does not pass, the next candidate is tried
+with its own context length (sent per request as `num_ctx`, so Ollama is not restarted). If none passes, the window
+says the computer is too slow. Loading a large model from a USB drive can take a while; the test allows up to 300
+seconds.
 
 ### Runtime settings
 
@@ -98,7 +113,8 @@ Ollama runs from the drive with per-process environment variables only (`New-Pnh
 `OLLAMA_HOST=127.0.0.1:<free port>`, `OLLAMA_NO_CLOUD=1`, `OLLAMA_MODELS=<drive>\PlugNHeal\models`,
 `OLLAMA_CONTEXT_LENGTH=<ctx>`, `OLLAMA_FLASH_ATTENTION=1`, `OLLAMA_KV_CACHE_TYPE=q8_0`, `OLLAMA_KEEP_ALIVE=30m`,
 `OLLAMA_MAX_LOADED_MODELS=1`, `OLLAMA_NUM_PARALLEL=1`, `OLLAMA_NOPRUNE=1`, `USERPROFILE`/`HOME` on the drive. Chat
-requests use temperature 0.
+requests use temperature 0 and send the `num_ctx` of the model in use (`OLLAMA_CONTEXT_LENGTH` is only the default of
+the first choice).
 
 ## 3. Licences
 
@@ -162,7 +178,7 @@ out, so that a built drive can be passed on without surprises. Examples from the
 - `qwen3.8` defaults to a high reasoning effort; how Ollama's `think` flag maps to it is unverified.
 - AMD cards count as GPUs, but the Windows ZIP of Ollama 0.40.15 contains CUDA and Vulkan back-ends and no ROCm
   libraries, so AMD cards would run through Vulkan. This has not been measured.
-- The speed test checks tokens per second only. It does not require the model to sit 100 % on the GPU.
+- The speed minimums (5/10/15 tokens per second) and the 90 % GPU share have not been checked on real PCs yet.
 - Small models make mistakes in multi-step tool use. The agent compensates (only candidate actions, validation,
   verified summary), see [SAFETY.md](SAFETY.md#honest-limits).
 

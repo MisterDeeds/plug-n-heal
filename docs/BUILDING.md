@@ -85,8 +85,11 @@ Double-click `BUILD.cmd` in the unpacked repository folder. If you downloaded th
 1. **"Which SSD should be prepared?"** The list shows external and removable drives (USB, also USB-attached SSDs
    that report as SCSI). **Show all drives** adds internal ones, for example a Thunderbolt NVMe enclosure. The
    Windows drive itself is never offered.
-2. **"How much should go onto the SSD?"** The sizes shown include the runtime and the reserve. A choice that does
-   not fit is reported. Space already used by an earlier, interrupted build counts as available.
+2. **"How much should go onto the SSD?"** The sizes shown include the runtime and the reserve, and each choice says
+   which PCs it helps and which SSD size it needs (16, 64 or 128 GB, computed from the catalogue): *Small* is enough
+   without a graphics card and for cards up to 8 GB, *Standard* adds the 9B (cards from 10 GB) and the 27B (24 GB
+   cards), *Full* only helps PCs with a 16 or 20 GB card. A choice that does not fit is reported. Space already used
+   by an earlier, interrupted build counts as available.
 3. **"Building the SSD"** shows one progress bar for all downloads, with the remaining time. The PC is kept awake.
    **Cancel** stops the build; the next start continues where it stopped.
 
@@ -120,7 +123,9 @@ cancelled.
    checks size and SHA-256 against `versions.json`, unpacks with `tar.exe` (fallback `Expand-Archive`) into
    `PlugNHeal\runtime\ollama\`, writes the marker `runtime.json` and deletes the ZIP.
 5. **App:** copies `src\` to `PlugNHeal\app\` (files that no longer exist in `src\` are removed there) and
-   `src\START.cmd` to the root of the drive.
+   `src\START.cmd` to the root of the drive. Then it removes the Mark-of-the-Web ("downloaded from the internet")
+   from everything under `PlugNHeal\` and from `START.cmd` (`Unblock-File`). On NTFS this matters when the repository
+   ZIP was not unblocked; exFAT cannot store the mark, so there it changes nothing. A failure is logged, never fatal.
 6. **Models:** starts `ollama.exe serve` from the drive on `127.0.0.1` with `OLLAMA_MODELS` on the drive and
    `OLLAMA_NOPRUNE=1`, and pulls every missing model. Ollama resumes interrupted downloads and verifies each blob's
    digest.

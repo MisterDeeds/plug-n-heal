@@ -38,11 +38,11 @@ BeforeAll {
         }
     }
     function Invoke-PnhAction {
-        param([string]$Id, [hashtable]$Parameters, [string]$RunFolder, [scriptblock]$Confirm)
-        $global:PnhFake.ActionCalls.Add(@{ Id = $Id; Parameters = $Parameters })
+        param([string]$Id, [hashtable]$Parameters, [string]$RunFolder, [scriptblock]$Confirm, [switch]$ForceConfirm)
+        $global:PnhFake.ActionCalls.Add(@{ Id = $Id; Parameters = $Parameters; ForceConfirm = [bool]$ForceConfirm })
         $a = @($global:PnhFake.Actions | Where-Object { $_.id -eq $Id })[0]
         $base = @{ Id = $Id; Ok = $true; Verified = $true; Declined = $false; Output = ''; Error = $null; RolledBack = $false; NeedsReboot = $false }
-        if ($a.confirm) {
+        if ($a.confirm -or ($ForceConfirm -and $a.changes)) {   # same rule as Test-PnhConfirmRequired
             $yes = & $Confirm @{ Title = $a.title.en; Explain = 'test'; Risk = 'low'; Reboot = $false }
             if (-not $yes) { $base.Ok = $false; $base.Verified = $false; $base.Declined = $true; return $base }
         }
@@ -123,11 +123,11 @@ BeforeAll {
 
     function Invoke-TestAgent {
         param([hashtable]$Model = @{ tag = 'fake:1b'; think = $false; freeShell = $false; ctx = 4096 }, [bool]$Answer = $true,
-            [int]$MaxRounds = 12, [string]$Category = 'printer', [switch]$ReadOnly)
+            [int]$MaxRounds = 12, [string]$Category = 'printer', [switch]$ReadOnly, [hashtable]$Server = @{ BaseUrl = 'http://fake' })
         $global:PnhFake.Answer = $Answer
         $folder = Join-Path $TestDrive ([guid]::NewGuid().ToString('N'))
         $global:PnhFake.RunFolder = $folder
-        Invoke-PnhAgent -Server @{ BaseUrl = 'http://fake' } -ModelEntry $Model -Category $Category -UserText 'My printer does not print' `
+        Invoke-PnhAgent -Server $Server -ModelEntry $Model -Category $Category -UserText 'My printer does not print' `
             -RunFolder $folder -OnEvent { param($e) $global:PnhFake.Events.Add($e) } `
             -Confirm { param($r) $global:PnhFake.Confirms.Add($r); $global:PnhFake.Answer } -MaxRounds $MaxRounds -Language 'en' -ReadOnly:$ReadOnly
     }
@@ -297,6 +297,17 @@ Describe 'Invoke-PnhAgent loop' {
         $global:PnhFake.ChatCalls[0].NumCtx | Should -Be 32768
     }
 
+    It 'sends the num_ctx of the model entry, not the server default (a fallback keeps its own context)' {
+        Reset-Fake
+        Add-Script (New-Call 'finish' @{ summary = 'x' })
+        $null = Invoke-TestAgent -Server @{ BaseUrl = 'http://fake'; ContextLength = 32768 } -Model @{ tag = 'mid:4b'; tier = 2; think = $false; freeShell = $false; ctx = 16384 }
+        $global:PnhFake.ChatCalls[0].NumCtx | Should -Be 16384
+        Reset-Fake
+        Add-Script (New-Call 'finish' @{ summary = 'x' })
+        $null = Invoke-TestAgent -Server @{ BaseUrl = 'http://fake'; ContextLength = 8192 } -Model @{ tag = 'adhoc:1b'; think = $false; freeShell = $false }
+        $global:PnhFake.ChatCalls[0].NumCtx | Should -Be 8192 -Because 'without ctx in the entry the server default applies'
+    }
+
     It 'stops at MaxRounds' {
         Reset-Fake
         Add-Script (New-Call 'prn_status') (New-Call 'ask_user' @{ question = 'Is the printer on?' }) (New-Call 'prn_status')
@@ -391,6 +402,46 @@ Describe 'Invoke-PnhAgent loop' {
         $null = Invoke-TestAgent
         (@($global:PnhFake.ActionCalls | ForEach-Object { $_.Id }) -join ',') | Should -Be 'prn.restart_spooler'
         (Get-ToolMessages 1)[1].content | Should -Match 'only one change at a time'
+    }
+}
+
+Describe 'Small models ask before every change (confirmAllChanges, tier 1)' {
+    It '<Case>: a change without its own confirmation is asked first' -ForEach @(
+        @{ Case = 'tier 1'; M = @{ tag = 'small:2b'; tier = 1; think = $false; freeShell = $false; ctx = 16384 } }
+        @{ Case = 'confirmAllChanges = true'; M = @{ tag = 'mid:4b'; tier = 2; confirmAllChanges = $true; think = $false; freeShell = $false; ctx = 16384 } }
+    ) {
+        Reset-Fake -Flags @('DISK_LOW')
+        Add-Script (New-Call 'disk_clean_temp' @{ drive = 'C' }) (New-Call 'finish' @{ summary = 'x' })
+        $r = Invoke-TestAgent -Model $M
+        $global:PnhFake.ActionCalls[0].Id | Should -Be 'disk.clean_temp'
+        $global:PnhFake.ActionCalls[0].ForceConfirm | Should -BeTrue
+        $global:PnhFake.Confirms.Count | Should -Be 1
+        $r.Actions[0].Declined | Should -BeFalse
+    }
+
+    It 'a "No" leaves the change undone' {
+        Reset-Fake -Flags @('DISK_LOW')
+        Add-Script (New-Call 'disk_clean_temp' @{ drive = 'C' }) (New-Call 'finish' @{ summary = 'x' })
+        $r = Invoke-TestAgent -Model @{ tag = 'small:2b'; tier = 1; think = $false; freeShell = $false; ctx = 16384 } -Answer $false
+        $global:PnhFake.Confirms.Count | Should -Be 1
+        $r.Actions[0].Declined | Should -BeTrue
+        (Get-ToolMessages 1)[0].content | Should -Match 'said no'
+    }
+
+    It 'larger models keep the action''s own rule (a low-risk change is not asked)' {
+        Reset-Fake -Flags @('DISK_LOW')
+        Add-Script (New-Call 'disk_clean_temp' @{ drive = 'C' }) (New-Call 'finish' @{ summary = 'x' })
+        $null = Invoke-TestAgent -Model @{ tag = 'mid:4b'; tier = 2; think = $false; freeShell = $false; ctx = 16384 }
+        $global:PnhFake.ActionCalls[0].ForceConfirm | Should -BeFalse
+        $global:PnhFake.Confirms.Count | Should -Be 0
+    }
+
+    It 'the real catalogue marks every tier-1 model with confirmAllChanges' {
+        $catalogPath = Join-Path (Join-Path (Join-Path (Split-Path -Parent $PSScriptRoot) 'src') 'catalog') 'models.json'
+        $doc = [System.IO.File]::ReadAllText($catalogPath, [System.Text.Encoding]::UTF8) | ConvertFrom-Json
+        $tier1 = @($doc.models | Where-Object { $_.tier -eq 1 })
+        $tier1.Count | Should -BeGreaterThan 0
+        foreach ($m in $tier1) { $m.confirmAllChanges | Should -BeTrue -Because $m.id }
     }
 }
 

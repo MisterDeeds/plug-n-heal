@@ -273,6 +273,12 @@ Describe 'Catalogue access' {
         Test-PnhConfirmRequired -Action (New-TestAction -Override @{ reboot = $true }) | Should -BeTrue
         Test-PnhConfirmRequired -Action (New-TestAction -Override @{ deletes = $true }) | Should -BeTrue
     }
+    It 'Test-PnhConfirmRequired -ForceConfirm asks for every changing action and never drops the own rule' {
+        Test-PnhConfirmRequired -Action (New-TestAction) -ForceConfirm | Should -BeTrue
+        Test-PnhConfirmRequired -Action (New-TestAction -Override @{ changes = $false; kind = 'diagnose' }) -ForceConfirm | Should -BeFalse
+        Test-PnhConfirmRequired -Action (New-TestAction -Override @{ changes = $false; kind = 'diagnose'; risk = 'medium' }) -ForceConfirm | Should -BeTrue
+        Test-PnhConfirmRequired -Action (New-TestAction -Override @{ confirm = $true }) -ForceConfirm:$false | Should -BeTrue
+    }
 }
 
 Describe 'Get-PnhCandidateActions' {
@@ -421,6 +427,27 @@ Describe 'Invoke-PnhAction flow' {
         $r = Invoke-PnhAction -Id 'test.action' -Action (New-TestAction -Override $O) -RunFolder $script:rf -Confirm { $script:n++; $true }
         $script:n | Should -Be 1
         $r.Declined | Should -BeFalse
+    }
+    It '-ForceConfirm asks before a low-risk change, and a "No" runs nothing' {
+        $script:n = 0
+        $r = Invoke-PnhAction -Id 'test.action' -Action (New-TestAction) -RunFolder $script:rf -ForceConfirm -Confirm { param($req) $script:n++; $script:asked = $req; $false }
+        $script:n | Should -Be 1
+        $script:asked.Risk | Should -Be 'low'
+        $r.Declined | Should -BeTrue
+        $r.Ok | Should -BeFalse
+        @(Get-ChildItem -Path $script:rf -Recurse -Filter 'ran.txt').Count | Should -Be 0
+        Should -Invoke New-PnhRestorePoint -Times 0 -Exactly
+    }
+    It '-ForceConfirm with "Yes" runs the change; a read-only action is not asked' {
+        $script:n = 0
+        $r = Invoke-PnhAction -Id 'test.action' -Action (New-TestAction) -RunFolder $script:rf -ForceConfirm -Confirm { $script:n++; $true }
+        $script:n | Should -Be 1
+        $r.Ok | Should -BeTrue
+        $ro = New-TestAction -Override @{ changes = $false; kind = 'diagnose'; backup = $null; rollback = $null; run = '[pscustomobject]@{ X = 1 }' }
+        $r2 = Invoke-PnhAction -Id 'test.action' -Action $ro -RunFolder $script:rf -ForceConfirm -Confirm { $script:n++; $false }
+        $script:n | Should -Be 1
+        $r2.Ok | Should -BeTrue
+        $r2.Declined | Should -BeFalse
     }
     It 'without a Confirm callback a confirmation counts as declined' {
         $r = Invoke-PnhAction -Id 'test.action' -Action (New-TestAction -Override @{ confirm = $true }) -RunFolder $script:rf

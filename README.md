@@ -167,8 +167,9 @@ time>\`. If the problem is not solved, show this report to someone who knows com
 ## Which AI model will my PC use?
 
 Plug'n'Heal chooses automatically. It measures the graphics card memory (VRAM) and the RAM, picks the largest model
-on the SSD that fits, loads it and measures its speed. If it answers slower than 5 tokens per second, it tries the
-next smaller model.
+on the SSD that fits, loads it and measures its speed. If it is too slow (small models under 5 tokens per second, the
+9B under 10, the 27B and the fast mode under 15), or a model meant for the graphics card does not fit almost
+completely onto it, it tries the next smaller model.
 
 | Your computer | Model it uses (if it is on the SSD) | On the SSD with |
 |---|---|---|
@@ -250,12 +251,13 @@ task for an expert (`Undo-PnhAction`, see [docs/TOOLBOX.md](docs/TOOLBOX.md)); t
 |---|---|---|
 | *"Plug'n'Heal could not start ... probably blocks helper programs"* with a code | Windows did not let PowerShell run, usually on a company or school PC | Ask the person who manages the computer |
 | *"The helper is not allowed to run here"* | PowerShell runs in a locked mode (company rules, possibly Smart App Control) | As above. Plug'n'Heal cannot work there |
-| Nothing happens at all, or Windows says it cannot run this app | Windows in S mode allows only Store apps | Plug'n'Heal cannot run in S mode |
+| Nothing happens at all, or Windows says it cannot run this app, or *"This computer is in S mode"* | Windows in S mode allows only Store apps | Plug'n'Heal cannot run in S mode |
 | *"Plug'n'Heal is incomplete: the folder PlugNHeal is missing"* | The SSD was not built, or files were deleted | Run the builder again |
 | *"Without your permission I can only look"* | You clicked **No** at the Windows question | Start again and click **Yes**. A standard user needs an administrator password |
 | *"The helper could not be started"* | The Ollama program on the SSD did not start | Try another USB port. If files are missing (for example removed by an antivirus), delete the folder `PlugNHeal\runtime` on the SSD and run the builder again |
 | *"The helper is missing on the drive"* | No AI model on the SSD | Run the builder again |
 | *"Sorry, this computer is too slow"* | Even the smallest model on the SSD was slower than 5 tokens per second | Close other programs, plug in a laptop, or use another PC |
+| *"This computer does not have enough memory"* | The RAM is smaller than even the smallest model on the SSD needs (2B: 3 GB) | Use a PC with more memory |
 | *"Plug'n'Heal is already open"* | A second start | Look for its window in the taskbar |
 | The builder says *"This SSD is formatted with FAT32"* | FAT32 cannot hold files over 4 GB | [Format the SSD with exFAT](docs/BUILDING.md#2-format-the-ssd-with-exfat) |
 | The builder says *"Not enough space on the SSD"* | The choice does not fit | Choose a smaller size or a larger SSD |

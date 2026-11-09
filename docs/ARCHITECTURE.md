@@ -79,6 +79,8 @@ X:\PlugNHeal\drive.json        build manifest (see 5.3)
 ```
 START.cmd
   └─ powershell 5.1 -NoProfile -ExecutionPolicy Bypass -File app\Start.ps1
+       ├─ S mode (SkuPolicyRequired = 1) → message error.smode + exit 23 (real S mode usually blocks cmd.exe and
+       │    powershell.exe before this point; then Windows shows its own message)
        ├─ LanguageMode must be FullLanguage, else message + exit (company PC / Smart App Control)
        ├─ not elevated → relaunch itself elevated once (UAC "Yes"); if refused → continue in read-only mode
        │    (a big banner explains it; diagnostics only, every change is skipped, the result says what would help;
@@ -86,7 +88,8 @@ START.cmd
        └─ start Ui.ps1 hidden (CreateNoWindow), exit → console closes
 Ui.ps1
   1. Welcome: big button "Help me" / "Hilfe starten"
-  2. Background runspace: Get-PnhHardware → Select-PnhModel → Start-PnhOllama → Test-PnhModelFit (may step down)
+  2. Background runspace: Get-PnhHardware → Select-PnhModel → Start-PnhOllama → Test-PnhModelFit (may step down
+     through Select-PnhModel's Candidates, each with its own num_ctx; no model fits the RAM → error.computer_too_weak)
   3. "What is wrong?": category buttons (internet, slow, disk full, printer, sound, Windows Update, other(text),
      "I don't know – check everything")
   4. Invoke-PnhAgent with events → step list with ○ / spinner / ✓ / ⚠, confirmation dialogs
@@ -135,8 +138,9 @@ VRAM from the display class registry key (`HardwareInformation.qwMemorySize`, fa
   "models": [
     { "id": "qwen3.5-2b", "tag": "qwen3.5:2b-q4_K_M", "bytes": 1950000000, "license": "Apache-2.0",
       "tier": 1, "minVramGB": 3, "minRamGB": 6, "ctx": 16384, "think": false,
-      "freeShell": false, "default": true, "notes": "..." } ] }
+      "freeShell": false, "confirmAllChanges": true, "default": true, "notes": "..." } ] }
 ```
+(`confirmAllChanges`, optional: every changing catalogue action needs a "Yes", see 5.6 and 5.7; set for tier 1.)
 (`bytes` are measured from the registry manifest; the builder re-measures and refuses mismatches > 1 %.)
 Profiles: `"profiles": { "small": {"description": "...", "models": ["<tag>", ...], "bytes": <sum>}, "standard": {...},
 "full": {...} }`.
@@ -150,10 +154,17 @@ in the builder and at runtime).
 Get-PnhModelCatalog                         # -> parsed models.json
 Get-PnhInstalledModels                      # -> tags present under models\manifests (no Ollama needed)
 Select-PnhModel -Hardware <obj> [-Installed <string[]>] [-Prefer <tag>]
-                # -> @{Model=<catalog entry>; Reason=<i18n key>; Ctx=<int>; UseGpu=<bool>; Fallbacks=@(<entries>)}
+                # -> @{Model=<catalog entry>; Reason=<i18n key>; Ctx=<int>; UseGpu=<bool>; Fallbacks=@(<entries>);
+                #      Candidates=@(@{Model; Tag; UseGpu; Ctx}); Path='gpu'|'cpu'|'preferred'|'weak'|'too_weak'|'none'}
+Get-PnhModelContext -ModelEntry <entry> [-UseGpu]   # -> num_ctx: catalogue ctx, capped at 16384 on the CPU
 ```
 Rule: largest installed model whose `minVramGB` ≤ (best dedicated NVIDIA/AMD VRAM − 1.5 GB); without a usable GPU the
-largest whose `minRamGB` ≤ RAM − 4 GB and `tier` ≤ 2 (CPU speed). `Fallbacks` = next smaller installed models.
+largest whose `minRamGB` ≤ RAM − 4 GB and `tier` ≤ 2 (CPU speed). Nothing fits: the smallest installed model whose
+`minRamGB` ≤ RAM (`weak`); if RAM is known and even that does not exist, no model (`too_weak`, the window shows
+`error.computer_too_weak`). `Fallbacks` = next smaller installed models. `Candidates` = the chosen model and the
+fallbacks in step-down order, each with its own `UseGpu` and `Ctx` (`Get-PnhModelContext`); `Candidates[i].Model` is a
+copy of the entry whose `ctx` is that value and is passed to `Test-PnhModelFit` and `Invoke-PnhAgent` as is. The context
+of a fallback is sent per request (`num_ctx`); Ollama is not restarted for a step-down.
 
 ### 5.4 Ollama.ps1
 
@@ -169,8 +180,14 @@ Invoke-PnhChat -Server <obj> -Model <tag> -Messages <array> [-Tools <array>] [-T
                # POST /api/chat, stream=false, temperature 0, body as UTF-8 bytes, -UseBasicParsing
                # -> @{Content; Thinking; ToolCalls=@(@{Id; Name; Arguments(hashtable)}); Raw; DurationMs}
 Get-PnhLoadedModels -Server <obj>           # GET /api/ps -> @(@{Name; Size; SizeVram})
-Test-PnhModelFit -Server <obj> -Model <tag> # loads with a tiny prompt; -> @{OnGpuPercent; TokensPerSecond; Ok}
+Test-PnhModelFit -Server <obj> -Model <tag> [-ModelEntry <entry>] [-UseGpu] [-NumCtx <int>]
+                 [-MinTokensPerSecond <double>] [-MinGpuPercent <int>]
+                 # loads with a tiny prompt; -> @{OnGpuPercent; TokensPerSecond; Ok; Reason; MinTokensPerSecond;
+                 #                                 MinGpuPercent; ...}
 ```
+Pass marks (`Get-PnhFitThreshold`): tokens per second by tier, 5 for tiers 1–2 (and ad-hoc models), 10 for tier 3,
+15 for tier 4 (thinking). GPU tiers (3–4) chosen with `UseGpu` must also sit at least 90 % on the GPU (`size_vram / size`
+from `/api/ps`), except `partialOffload` models; CPU tiers are judged by speed only.
 
 ### 5.5 Diagnose.ps1 and toolbox/categories.json
 
@@ -211,8 +228,9 @@ Script blocks receive `$P` (validated parameters as hashtable) and `$Backup` (pa
 ```powershell
 Get-PnhActions [-Category <id>]              # -> catalogue entries
 ConvertTo-PnhToolDefinitions -Actions <arr> -Language <de|en>   # -> Ollama "tools" array
-Invoke-PnhAction -Id <s> -Parameters <hashtable> -RunFolder <s> -Confirm <scriptblock>
-                 # validate → (confirm if confirm/risk>=medium/reboot) → restore point before first change
+Invoke-PnhAction -Id <s> -Parameters <hashtable> -RunFolder <s> -Confirm <scriptblock> [-ForceConfirm]
+                 # validate → (confirm if confirm/risk>=medium/reboot/deletes; with -ForceConfirm every change)
+                 # → restore point before first change
                  # → backup → run (timeout) → verify
                  # -> @{Id; Ok; Verified; Declined; Output(short); Error; RolledBack; NeedsReboot}
 New-PnhRestorePoint -Description <s>         # once per run; -> @{Created; Reason}
@@ -233,6 +251,9 @@ Events passed to `OnEvent` (one hashtable each, `Type` decides the rest):
 Text with `Source='model'` is the model's own wording and **unverified**; the UI shows it as such.
 `Confirm` gets `@{Kind='action'|'question'|'command'; Title; Explain; Risk; Reboot; Command}` and returns `$true`/`$false`.
 In `-ReadOnly` mode `Confirm` is never called; changing calls are skipped and reported under `WouldHelp`.
+`ModelEntry.ctx` is the `num_ctx` of every request (`Server.ContextLength` only when it is missing), so a fallback keeps
+its own context length. For entries with `confirmAllChanges = true` (or `tier` 1) every catalogue action is run with
+`Invoke-PnhAction -ForceConfirm`: each change asks first, whatever the action's own rule says.
 
 Stop findings: `findings.json` entries may carry `blocks` (action ids or areas they forbid) and `stopWhen` (a read-only
 check action). The agent runs `stopWhen` before asking the model: positive → stop and explain; clearly negative → the
@@ -260,13 +281,17 @@ queue on the UI thread. The UI never blocks.
 ### 5.9 Builder
 
 `builder/versions.json` pins: Ollama version, asset URL, size, sha256. Model list comes from `src/catalog/models.json`.
-Profiles: `small` (tier 1–2, ~5 GB), `standard` (default, ~30 GB), `full` (all, ~62 GB). Steps: choose drive →
-check exFAT/NTFS and free space → download runtime with resume and hash check → extract → copy `src\` → start Ollama
+Profiles (model bytes / on the drive incl. unpacked runtime and 512 MiB reserve / suggested SSD): `small` (tier 1–2,
+5.3 GB / 8.1 GB / 16 GB), `standard` (default, 29.6 GB / 32.4 GB / 64 GB), `full` (all, 62.6 GB / 65.4 GB / 128 GB).
+The wizard computes these from `models.json` and `versions.json` (`Get-PnhProfileOption`). Steps: choose drive →
+check exFAT/NTFS and free space → download runtime with resume and hash check → extract → copy `src\` → remove the
+Mark-of-the-Web from `PlugNHeal\` and `START.cmd` (`Unblock-File`, best effort; exFAT has no streams) → start Ollama
 from the drive with internet and `POST /api/pull` each model (progress) → verify every blob against the manifest →
 write `drive.json`, `README.txt`, licences → done. `build-drive.sh` does the same with `curl` + registry download
 (manifest + blobs, sha256-verified) so it works without running Ollama.
 
-`drive.json`: `{ "builtAt": "...", "builder": "plug-n-heal <version>", "ollama": "0.40.15", "models": [{"tag"; "bytes"}] }`
+`drive.json`: `{ "builtAt": "...", "builder": "plug-n-heal <version>", "ollama": "0.40.15", "profile": "standard",
+"models": [{"id"; "tag"; "bytes"}] }` (both builders write the same shape).
 
 ## 6. Logs and privacy
 

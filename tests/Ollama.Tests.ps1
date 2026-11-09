@@ -254,12 +254,61 @@ Describe 'Get-PnhLoadedModels and Test-PnhModelFit' {
         $missing.Ok | Should -BeFalse
     }
 
+    It 'uses the tier thresholds: <Case>' -ForEach @(
+        @{ Case = 'CPU tier 2: speed only'; Entry = @{ tier = 2 }; Gpu = $false; Ok = $true; Reason = 'ok'; MinTps = 5; MinGpu = 0 }
+        @{ Case = 'tier 2 on the GPU: speed only (CPU tier)'; Entry = @{ tier = 2 }; Gpu = $true; Ok = $true; Reason = 'ok'; MinTps = 5; MinGpu = 0 }
+        @{ Case = 'tier 3 on the GPU: 75 % is not enough'; Entry = @{ tier = 3 }; Gpu = $true; Ok = $false; Reason = 'gpu_share'; MinTps = 10; MinGpu = 90 }
+        @{ Case = 'tier 4 on the GPU: 12 tokens/s is too slow'; Entry = @{ tier = 4 }; Gpu = $true; Ok = $false; Reason = 'slow'; MinTps = 15; MinGpu = 90 }
+        @{ Case = 'tier 3 partialOffload: no GPU share needed'; Entry = @{ tier = 3; partialOffload = $true }; Gpu = $true; Ok = $true; Reason = 'ok'; MinTps = 10; MinGpu = 0 }
+        @{ Case = 'tier 3 on the CPU path: no GPU share needed'; Entry = @{ tier = 3 }; Gpu = $false; Ok = $true; Reason = 'ok'; MinTps = 10; MinGpu = 0 }
+        @{ Case = 'no entry (ad-hoc): 5 tokens/s'; Entry = $null; Gpu = $true; Ok = $true; Reason = 'ok'; MinTps = 5; MinGpu = 0 }
+    ) {
+        Mock Invoke-WebRequest { New-FakeResponse $chatJson } -ParameterFilter { $Uri -like '*/api/chat' }
+        Mock Invoke-WebRequest { New-FakeResponse $psJson } -ParameterFilter { $Uri -like '*/api/ps' }
+        $fit = Test-PnhModelFit -Server $server -Model 'qwen3.5:4b-q4_K_M' -ModelEntry $Entry -UseGpu:$Gpu
+        $fit.Ok | Should -Be $Ok
+        $fit.Reason | Should -Be $Reason
+        $fit.MinTokensPerSecond | Should -Be $MinTps
+        $fit.MinGpuPercent | Should -Be $MinGpu
+    }
+
+    It 'loads the model with the -NumCtx of the candidate' {
+        Mock Invoke-WebRequest { New-FakeResponse $chatJson } -ParameterFilter { $Uri -like '*/api/chat' }
+        Mock Invoke-WebRequest { New-FakeResponse $psJson } -ParameterFilter { $Uri -like '*/api/ps' }
+        $null = Test-PnhModelFit -Server $server -Model 'qwen3.5:4b-q4_K_M' -ModelEntry @{ tier = 4 } -UseGpu -NumCtx 32768
+        Should -Invoke Invoke-WebRequest -ParameterFilter { $Uri -like '*/api/chat' -and (Get-SentBody $Body).options.num_ctx -eq 32768 }
+    }
+
+    It 'explicit thresholds override the tier values' {
+        Mock Invoke-WebRequest { New-FakeResponse $chatJson } -ParameterFilter { $Uri -like '*/api/chat' }
+        Mock Invoke-WebRequest { New-FakeResponse $psJson } -ParameterFilter { $Uri -like '*/api/ps' }
+        $fit = Test-PnhModelFit -Server $server -Model 'qwen3.5:4b-q4_K_M' -ModelEntry @{ tier = 4 } -UseGpu -MinTokensPerSecond 10 -MinGpuPercent 70
+        $fit.Ok | Should -BeTrue
+    }
+
     It 'reports a failed generation' {
         Mock Invoke-WebRequest { throw (New-HttpError 500 '{"error":"model requires more system memory"}') }
         $fit = Test-PnhModelFit -Server $server -Model 'qwen3.5:4b-q4_K_M'
         $fit.Ok | Should -BeFalse
         $fit.Reason | Should -Be 'error'
         $fit.Error | Should -Match 'more system memory'
+    }
+}
+
+Describe 'Get-PnhFitThreshold' {
+    It 'tier <Tier>, GPU <Gpu>, partial offload <Partial> -> <Tps> tokens/s, <GpuPct> % on the GPU' -ForEach @(
+        @{ Tier = 0; Gpu = $true; Partial = $false; Tps = 5; GpuPct = 0 }
+        @{ Tier = 1; Gpu = $false; Partial = $false; Tps = 5; GpuPct = 0 }
+        @{ Tier = 1; Gpu = $true; Partial = $false; Tps = 5; GpuPct = 0 }
+        @{ Tier = 2; Gpu = $true; Partial = $false; Tps = 5; GpuPct = 0 }
+        @{ Tier = 3; Gpu = $true; Partial = $false; Tps = 10; GpuPct = 90 }
+        @{ Tier = 3; Gpu = $false; Partial = $false; Tps = 10; GpuPct = 0 }
+        @{ Tier = 4; Gpu = $true; Partial = $false; Tps = 15; GpuPct = 90 }
+        @{ Tier = 4; Gpu = $true; Partial = $true; Tps = 15; GpuPct = 0 }
+    ) {
+        $t = Get-PnhFitThreshold -Tier $Tier -UseGpu:$Gpu -PartialOffload:$Partial
+        $t.MinTokensPerSecond | Should -Be $Tps
+        $t.MinGpuPercent | Should -Be $GpuPct
     }
 }
 

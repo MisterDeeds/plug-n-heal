@@ -225,15 +225,20 @@ function Test-PnhIdPattern {
 function Test-PnhConfirmRequired {
     <#
     .SYNOPSIS
-        Confirmation rule: confirm = true OR risk medium/high OR reboot OR deletes.
+        Confirmation rule: confirm = true OR risk medium/high OR reboot OR deletes
+        OR (-ForceConfirm AND changes = true).
+    .PARAMETER ForceConfirm
+        Every changing action needs a "Yes", whatever its own rule says. Set by the agent for models with
+        confirmAllChanges = true (tier 1). Only adds confirmations, never removes one.
     #>
     [CmdletBinding()]
     [OutputType([bool])]
-    param([Parameter(Mandatory = $true)]$Action)
+    param([Parameter(Mandatory = $true)]$Action, [switch]$ForceConfirm)
     return [bool]((Get-PnhMember $Action 'confirm') -eq $true -or
         (Get-PnhMember $Action 'risk') -in @('medium', 'high') -or
         (Get-PnhMember $Action 'reboot') -eq $true -or
-        (Get-PnhMember $Action 'deletes') -eq $true)
+        (Get-PnhMember $Action 'deletes') -eq $true -or
+        ($ForceConfirm -and (Get-PnhMember $Action 'changes') -eq $true))
 }
 
 function Test-PnhActionBlocked {
@@ -771,7 +776,8 @@ function Invoke-PnhAction {
     .DESCRIPTION
         Order: find -> experimental check -> validate parameters -> stop-finding blocks -> admin and
         user-context checks -> parameter values must come from detection -> confirmation
-        (confirm / risk >= medium / reboot / deletes; no -Confirm block means "declined") ->
+        (confirm / risk >= medium / reboot / deletes, with -ForceConfirm every changing action;
+        no -Confirm block means "declined") ->
         restore point before the first changing action of the run -> backup (failure = stop,
         nothing changed) -> run with timeout -> verify (a script decides, exactly $true) ->
         result. If the run itself fails, the rollback runs automatically.
@@ -783,6 +789,9 @@ function Invoke-PnhAction {
         Optional finding codes of the diagnosis; their "blocks" are enforced here as well.
     .PARAMETER AllowExperimental
         Experimental actions are refused without this switch.
+    .PARAMETER ForceConfirm
+        Ask before every changing action, also when its own rule would not (small models, see
+        Test-PnhConfirmRequired).
     .PARAMETER Action
         Catalogue entry to use instead of looking up -Id (tests, previews).
 
@@ -800,6 +809,7 @@ function Invoke-PnhAction {
         [string[]]$Flags = @(),
         [switch]$AllowExperimental,
         [switch]$SkipChoiceCheck,
+        [switch]$ForceConfirm,
         $Action
     )
     $started = Get-Date
@@ -874,7 +884,7 @@ function Invoke-PnhAction {
         }
     }
 
-    if (Test-PnhConfirmRequired -Action $Action) {
+    if (Test-PnhConfirmRequired -Action $Action -ForceConfirm:$ForceConfirm) {
         $request = @{
             Id         = $Action.id
             Title      = $res.Title

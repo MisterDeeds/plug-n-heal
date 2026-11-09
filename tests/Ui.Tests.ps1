@@ -255,9 +255,27 @@ Describe 'Start.ps1 and Ui.ps1 as scripts' {
         $loadIndex | Should -BeGreaterThan $langIndex
     }
 
+    It 'Start.ps1 checks S mode first and explains it with error.smode (exit code 23)' {
+        $statements = @((Get-TestAst -Path $StartPs1Path).Ast.EndBlock.Statements)
+        $smodeIndex = -1
+        $langIndex = -1
+        for ($i = 0; $i -lt $statements.Count; $i++) {
+            if ($statements[$i] -isnot [System.Management.Automation.Language.IfStatementAst]) { continue }
+            $t = $statements[$i].Extent.Text
+            if ($smodeIndex -lt 0 -and $statements[$i].Clauses[0].Item1.Extent.Text -match 'Test-StartSMode') { $smodeIndex = $i }
+            if ($langIndex -lt 0 -and $t -match 'FullLanguage') { $langIndex = $i }
+        }
+        $smodeIndex | Should -BeGreaterOrEqual 0
+        $smodeIndex | Should -BeLessThan $langIndex
+        $body = $statements[$smodeIndex].Extent.Text
+        $body | Should -Match "-Key 'error\.smode'"
+        $body | Should -Match 'exit 23'
+        $De.Contains('error.smode.title') | Should -BeTrue
+    }
+
     It 'Start.ps1 keeps the ConstrainedLanguage path free of .NET types' {
         $ast = (Get-TestAst -Path $StartPs1Path).Ast
-        $clmFunctions = @('Get-StartLanguage', 'Get-StartText', 'Write-StartLog', 'Initialize-StartFallbackLog')
+        $clmFunctions = @('Get-StartLanguage', 'Get-StartText', 'Write-StartLog', 'Initialize-StartFallbackLog', 'Test-StartSMode')
         $offenders = @()
         foreach ($f in $ast.FindAll({ param($n) $n -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $clmFunctions -contains $n.Name }, $false)) {
             $offenders += @($f.FindAll({ param($n) $n -is [System.Management.Automation.Language.TypeExpressionAst] }, $true) | ForEach-Object { $f.Name + ': ' + $_.Extent.Text })
@@ -304,7 +322,7 @@ Describe 'Start.ps1 and Ui.ps1 as scripts' {
 
 Describe 'Start.ps1 helpers' {
     BeforeAll {
-        foreach ($f in (Get-TestFunctionText -Path $StartPs1Path -Name @('ConvertTo-StartArgument', 'Get-StartLanguage', 'Get-StartText', 'Write-StartLog'))) {
+        foreach ($f in (Get-TestFunctionText -Path $StartPs1Path -Name @('ConvertTo-StartArgument', 'Get-StartLanguage', 'Get-StartText', 'Write-StartLog', 'Test-StartSMode'))) {
             . ([scriptblock]::Create($f))
         }
         $script:AppDir = $Src
@@ -366,6 +384,17 @@ Describe 'Start.ps1 helpers' {
         $parsed.Count | Should -Be 3
         $parsed[1] | Should -BeExactly $Value
         $parsed[2] | Should -Be '-ReadOnly'
+    }
+
+    It 'Test-StartSMode reads SkuPolicyRequired: <Case>' -ForEach @(
+        @{ Case = '1 = S mode'; Value = 1; Expect = $true }
+        @{ Case = '0 = no S mode'; Value = 0; Expect = $false }
+        @{ Case = 'value missing = no S mode'; Value = $null; Expect = $false }
+    ) {
+        if ($null -eq $Value) { Mock Get-ItemProperty { throw 'Property SkuPolicyRequired does not exist' } }
+        else { Mock Get-ItemProperty { [pscustomobject]@{ SkuPolicyRequired = $Value } } }
+        Test-StartSMode | Should -Be $Expect
+        Should -Invoke Get-ItemProperty -Times 1 -Exactly -ParameterFilter { $LiteralPath -eq 'HKLM:\SYSTEM\CurrentControlSet\Control\CI\Policy' }
     }
 
     It 'reads texts straight from the i18n files when Common.ps1 is not loaded' {
@@ -623,6 +652,45 @@ Describe 'Background job of Ui.ps1 (demo mode, real runspace, no WinForms)' {
         $job.Sync.Server | Should -BeNullOrEmpty
         $De.Contains($Key + '.title') | Should -BeTrue
         [System.IO.File]::ReadAllText((Join-Path -Path $RunDir -ChildPath 'run.log')) | Should -Match 'Preparation failed'
+    }
+
+    It 'prepare (real Models.ps1, fake hardware and Ollama): a step-down tests and hands over the fallback with its own context' {
+        $app2 = Join-Path -Path (Join-Path -Path $TestDrive -ChildPath 'PlugNHeal') -ChildPath 'app'
+        $lib2 = Join-Path -Path $app2 -ChildPath 'lib'
+        foreach ($d in @($lib2, (Join-Path -Path $app2 -ChildPath 'catalog'), (Join-Path -Path $app2 -ChildPath 'i18n'))) { $null = New-Item -ItemType Directory -Path $d -Force }
+        Copy-Item -Path (Join-Path -Path (Join-Path -Path $Src -ChildPath 'lib') -ChildPath 'Common.ps1') -Destination $lib2
+        Copy-Item -Path (Join-Path -Path (Join-Path -Path $Src -ChildPath 'lib') -ChildPath 'Models.ps1') -Destination $lib2
+        Copy-Item -Path (Join-Path -Path (Join-Path -Path $Src -ChildPath 'catalog') -ChildPath 'models.json') -Destination (Join-Path -Path $app2 -ChildPath 'catalog')
+        Copy-Item -Path $DePath, $EnPath -Destination (Join-Path -Path $app2 -ChildPath 'i18n')
+        # 24 GB card: qwen3.8:27b on the GPU with 32k first; the fake fit test lets only the 4B pass.
+        Set-Content -LiteralPath (Join-Path -Path $lib2 -ChildPath 'Hardware.ps1') -Value @'
+function Get-PnhHardware {
+    @{ Gpus = @(@{ Name = 'GPU'; Vendor = 'nvidia'; VramBytes = [uint64](24564 * 1MB); Integrated = $false; Driver = '1' })
+       BestDedicatedVramBytes = [uint64](24564 * 1MB); RamBytes = [uint64](31.8 * 1GB); FreeRamBytes = [uint64](8GB) }
+}
+'@
+        Set-Content -LiteralPath (Join-Path -Path $lib2 -ChildPath 'Ollama.ps1') -Value @'
+function Get-PnhInstalledModels { 'qwen3.8:27b-q4_K_M'; 'qwen3.5:4b-q4_K_M' }
+function Start-PnhOllama { param([object]$Paths, [int]$Port, [int]$ContextLength) $PnhUiSync['StartCtx'] = $ContextLength; @{ BaseUrl = 'http://fake'; ContextLength = $ContextLength } }
+function Stop-PnhOllama { param([object]$Server) }
+function Test-PnhModelFit {
+    param([object]$Server, [string]$Model, [object]$ModelEntry, [switch]$UseGpu, [int]$NumCtx)
+    $PnhUiSync['Fits'] = @($PnhUiSync['Fits']) + @(('{0}|{1}|{2}|{3}' -f $Model, $NumCtx, [bool]$UseGpu, $ModelEntry.ctx))
+    @{ Ok = ($Model -eq 'qwen3.5:4b-q4_K_M'); OnGpuPercent = 100; TokensPerSecond = 40 }
+}
+'@
+        foreach ($n in @('Diagnose', 'Toolbox', 'Agent')) { Set-Content -LiteralPath (Join-Path -Path $lib2 -ChildPath ($n + '.ps1')) -Value '# not needed for prepare' }
+        $sync = [hashtable]::Synchronized(@{ Cancel = $false; Server = $null; ModelEntry = $null; Fits = @() })
+        $job = Build-TestJob -Kind 'prepare' -Demo $false -Sync $sync -Extra @{ AppDir = $app2 }
+        $null = $job.PS.Invoke()
+        $job.PS.Dispose()
+        $events = Read-TestQueue -Queue $job.Queue
+        $events[-1].Type | Should -Be 'prepared'
+        $events[-1].Model | Should -Be 'qwen3.5:4b-q4_K_M'
+        $sync.StartCtx | Should -Be 32768
+        @($sync.Fits) | Should -Be @('qwen3.8:27b-q4_K_M|32768|True|32768', 'qwen3.5:4b-q4_K_M|16384|True|16384')
+        $sync.ModelEntry.tag | Should -Be 'qwen3.5:4b-q4_K_M'
+        $sync.ModelEntry.ctx | Should -Be 16384 -Because 'the agent sends the num_ctx of the entry, not the 32k the server started with'
     }
 
     It 'prepare: a cancel request ends with cancelled, not with an error' {

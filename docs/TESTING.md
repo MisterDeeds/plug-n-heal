@@ -28,7 +28,8 @@ right now: please use the
 | `tests/Ui.Tests.ps1` | `START.cmd` as text, `Start.ps1` and `Ui.ps1` helpers, i18n completeness (German vs English), the background job in demo mode |
 | `tests/Builder.Tests.ps1` | `Build-Drive.ps1`: paths, file system and space checks, manifests, download retry loop (mocked), `drive.json`, `README.txt` |
 
-`builder/build-drive.sh` has no automated tests yet.
+`builder/build-drive.sh` has no unit tests; the CI job `builder-linux` checks it with shellcheck and a real build
+(section 3).
 
 Tests that need real Windows are marked with `-Skip:(-not $onWindows)` and are skipped on Linux.
 
@@ -55,9 +56,20 @@ pwsh -NoProfile -File tests/Invoke-Tests.ps1
 pwsh -NoProfile -File tests/Invoke-Tests.ps1 -Path tests/Models.Tests.ps1 -Output Detailed
 ```
 
-It writes NUnit and JUnit result files to `TestResults/` (ignored by git; `-NoResultFiles` switches that off) and
-returns the number of failures as exit code. `-Tag` and `-ExcludeTag` select tests by tag. Plain
-`Invoke-Pester -Path ./tests` works too, as long as Pester 5 is the version that is loaded.
+It writes NUnit and JUnit result files (`<Name>.nunit.xml`, `<Name>.junit.xml`; `-Name` sets the base name, default
+`pester-<edition><major>.<minor>-<os>`, for example `pester-core7.4-linux`) to `TestResults/` (ignored by git;
+`-OutputDirectory` moves them, `-NoResultFiles` switches them off) and returns failed tests + failed blocks + failed
+files as exit code, capped at 255 (255 also means the run could not start, for example without Pester 5). On GitHub
+Actions it adds a summary table to the job page.
+`-Tag` and `-ExcludeTag` select tests by tag, `-Output` sets the console detail. Plain `Invoke-Pester -Path ./tests`
+works too, as long as Pester 5 is the version that is loaded.
+
+Without a local PowerShell, the same run works in a container:
+
+```bash
+docker run --rm -v "$PWD:/r" -w /r mcr.microsoft.com/powershell:lts-debian-12 pwsh -NoProfile -Command \
+  'Install-Module Pester -RequiredVersion 5.7.1 -Force -Scope CurrentUser *> $null; ./tests/Invoke-Tests.ps1'
+```
 
 **Static analysis** with the project settings (severity Error and Warning; compatibility rules for Windows
 PowerShell 5.1 and PowerShell 7):
@@ -132,13 +144,17 @@ powershell -NoProfile -ExecutionPolicy Bypass -STA -File .\src\Ui.ps1 -Demo -Dem
 ## 3. CI
 
 CI runs on GitHub Actions (free for public repositories) and is defined in `.github/workflows/ci.yml`; that file is
-the reference for the exact jobs and versions. It follows [ARCHITECTURE.md section 7](ARCHITECTURE.md#7-testing):
+the reference for the exact steps and versions. It runs on every push to `main`, on pull requests and by hand, with
+four jobs and only public downloads (no secrets). It follows [ARCHITECTURE.md section 7](ARCHITECTURE.md#7-testing):
 
-| Part | Runs on | Does |
+| Job | Runs on | Does |
 |---|---|---|
-| Lint | GitHub-hosted runner | PSScriptAnalyzer with `tests/PSScriptAnalyzerSettings.psd1` over `src/`, `builder/` and `tests/`, plus a stricter pass over `src/` |
-| Unit tests | Windows PowerShell 5.1 and PowerShell 7 on Windows, PowerShell 7 on Linux | `tests/Invoke-Tests.ps1`; results as NUnit/JUnit files and a summary on the job page |
-| End-to-end | Windows | the portable Ollama and the smallest model on the CPU; `tests/e2e/Break-Printer.ps1`, then `tests/e2e/Assert-Run.ps1` (scenarios `diagnose`, `printer`, `network-readonly`) |
+| `lint` | `windows-latest`, PowerShell 7 | PSScriptAnalyzer 1.25.0 with `tests/PSScriptAnalyzerSettings.psd1` over `src/`, `builder/` and `tests/`, plus a strict pass over `src/` that keeps `PSAvoidUsingEmptyCatchBlock`, `PSUseDeclaredVarsMoreThanAssignments` and `PSAvoidGlobalVars`. Repository checks on every tracked text file: valid UTF-8, no sharp s, strict JSON without BOM, CRLF in `.cmd`/`.bat`, `.ps1`/`.psm1`/`.psd1` ASCII-only or UTF-8 with BOM, identical keys in `src/i18n/de.json` and `en.json` |
+| `unit` | matrix `windows-ps5.1` (Windows PowerShell 5.1), `windows-ps7` (PowerShell 7 on Windows), `ubuntu-ps7` (PowerShell 7 on Linux) | installs Pester 5 (5.5 to 5.99) and runs `tests/Invoke-Tests.ps1 -Name pester-<matrix name>`; uploads `TestResults/` as artifact `test-results-<matrix name>` |
+| `builder-linux` | `ubuntu-latest` | shellcheck (`koalaman/shellcheck:v0.11.0`) over every `*.sh`; `builder/build-drive.sh` builds profile `small` from a CI catalogue that holds only the CI model (`PNH_CI_MODEL`, `qwen3.5:2b-q4_K_M`); checks the drive (files, `drive.json`, manifest and blob sizes, BOM/CRLF of `README.txt`, CRLF of `START.cmd`); then the official Linux Ollama of the pinned version reads the built models in a network namespace without a route out (`ollama list`, `show`, a tiny generation) |
+| `e2e-windows` | `windows-latest`, Windows PowerShell 5.1 | `Build-Drive.ps1 -NonInteractive` onto a `subst` drive `P:` with the same CI catalogue; `tests/e2e/Assert-Run.ps1 -Scenario diagnose` (under 60 s); `tests/e2e/Break-Printer.ps1`; `Assert-Run.ps1 -Scenario printer` (`Run-Headless.ps1 -AutoConfirm` with the CI model on the CPU, must fix the spooler); `Assert-Run.ps1 -Scenario network-readonly` (must change nothing); uploads run folders, build log and evidence |
+
+The two build jobs cache the runtime ZIP and the model blobs between runs.
 
 The Windows runner is Windows Server: System Restore does not exist there, so the restore point is reported as
 skipped (reason `server-os`), which is the expected result. The runner has no GPU, no consumer features and no

@@ -466,9 +466,13 @@ $script:JobScript = {
             param([object]$Hardware, [string[]]$Installed, [string]$Prefer)
             $null = $Hardware, $Installed, $Prefer
             Wait-Demo 800
-            if ($DemoFailure -eq 'weak') { return @{ Model = $null; Reason = 'model.reason.none_installed'; Ctx = 0; UseGpu = $false; Fallbacks = @() } }
-            return @{ Model = @{ id = 'demo-2b'; tag = 'qwen3.5:2b-q4_K_M' }; Reason = 'model.reason.cpu'; Ctx = 8192; UseGpu = $false
-                Fallbacks = @(@{ id = 'demo-0.8b'; tag = 'qwen3.5:0.8b-q8_0' }) }
+            if ($DemoFailure -eq 'weak') {
+                return @{ Model = $null; Reason = 'model.reason.weak_hardware'; Path = 'too_weak'; Ctx = 0; UseGpu = $false; Fallbacks = @(); Candidates = @() }
+            }
+            $first = @{ id = 'demo-2b'; tag = 'qwen3.5:2b-q4_K_M'; tier = 1; ctx = 8192 }
+            $second = @{ id = 'demo-0.8b'; tag = 'qwen3.5:0.8b-q8_0'; tier = 1; ctx = 4096 }
+            return @{ Model = $first; Reason = 'model.reason.cpu'; Path = 'cpu'; Ctx = 8192; UseGpu = $false; Fallbacks = @($second)
+                Candidates = @(@{ Model = $first; Tag = $first.tag; UseGpu = $false; Ctx = 8192 }, @{ Model = $second; Tag = $second.tag; UseGpu = $false; Ctx = 4096 }) }
         }
         function Start-PnhOllama {
             param([object]$Paths, [int]$Port, [int]$ContextLength)
@@ -479,8 +483,8 @@ $script:JobScript = {
         }
         function Stop-PnhOllama { param([object]$Server) $null = $Server }
         function Test-PnhModelFit {
-            param([object]$Server, [string]$Model)
-            $null = $Server, $Model
+            param([object]$Server, [string]$Model, [object]$ModelEntry, [switch]$UseGpu, [int]$NumCtx)
+            $null = $Server, $Model, $ModelEntry, $UseGpu, $NumCtx
             Wait-Demo 1500
             return @{ OnGpuPercent = 0; TokensPerSecond = 12.5; Ok = ($DemoFailure -ne 'slow') }
         }
@@ -536,8 +540,10 @@ $script:JobScript = {
             if ($installed.Count -eq 0) { $failKey = 'error.no_model'; throw 'No model installed on the drive.' }
             $selection = Select-PnhModel -Hardware $hardware -Installed $installed
             if ($null -eq $selection -or $null -eq $selection.Model) {
+                # Select-PnhModel returns no model when the RAM is smaller than every installed model needs
+                # (Path 'too_weak') or when nothing is installed (Reason none_installed).
+                $failKey = 'error.computer_too_weak'
                 if ($null -ne $selection -and [string]$selection.Reason -eq 'model.reason.none_installed' -and -not $Demo) { $failKey = 'error.no_model' }
-                else { $failKey = 'error.computer_too_weak' }
                 throw 'No installed model fits this computer.'
             }
             Write-JobLog -Message 'Model selected' -Data @{ Tag = [string]$selection.Model.tag; Reason = [string]$selection.Reason; Ctx = $selection.Ctx; UseGpu = $selection.UseGpu }
@@ -554,19 +560,27 @@ $script:JobScript = {
             Write-JobLog -Message 'Ollama started' -Data @{ BaseUrl = [string]$server.BaseUrl; Version = [string]$server.Version }
             $failKey = 'error.unexpected'
 
+            # Step down through Select-PnhModel's Candidates: each one with its own GPU/CPU placement and context
+            # length (Get-PnhModelContext), sent per request as num_ctx, so no Ollama restart is needed.
             $chosen = $null
-            $candidates = @(@($selection.Model) + @($selection.Fallbacks) | Where-Object { $null -ne $_ })
+            $candidates = @()
+            if ($selection.ContainsKey('Candidates')) { $candidates = @(@($selection.Candidates) | Where-Object { $null -ne $_ }) }
+            if ($candidates.Count -eq 0) { $candidates = @(@{ Model = $selection.Model; UseGpu = [bool]$selection.UseGpu; Ctx = [int]$selection.Ctx }) }
             foreach ($candidate in $candidates) {
                 Assert-JobNotCancelled
-                $tag = [string]$candidate.tag
-                $fit = Test-PnhModelFit -Server $server -Model $tag
+                $tag = [string]$candidate.Model.tag
+                $fitArgs = @{ Server = $server; Model = $tag; ModelEntry = $candidate.Model; UseGpu = [bool]$candidate.UseGpu }
+                if ([int]$candidate.Ctx -gt 0) { $fitArgs.NumCtx = [int]$candidate.Ctx }
+                $fit = Test-PnhModelFit @fitArgs
                 Write-JobLog -Message ('Model fit ' + $tag) -Data $fit
                 if ($null -ne $fit -and [bool]$fit.Ok) { $chosen = $candidate; break }
             }
             if ($null -eq $chosen) { $failKey = 'error.model_too_slow'; throw 'No installed model is fast enough on this computer.' }
-            $PnhUiSync.ModelEntry = $chosen
+            # The agent gets the candidate's entry: its ctx is the context length this model was tested with.
+            $PnhUiSync.ModelEntry = $chosen.Model
+            Write-JobLog -Message 'Model chosen' -Data @{ Tag = [string]$chosen.Model.tag; UseGpu = [bool]$chosen.UseGpu; Ctx = [int]$chosen.Ctx }
             Send-JobEvent @{ Type = 'prep-step'; Key = 'step.start'; State = 'done' }
-            Send-JobEvent @{ Type = 'prepared'; Model = [string]$chosen.tag }
+            Send-JobEvent @{ Type = 'prepared'; Model = [string]$chosen.Model.tag }
         } catch {
             $err = $_
             if ($null -ne $server) {

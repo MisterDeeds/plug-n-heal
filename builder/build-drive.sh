@@ -546,7 +546,7 @@ The builder takes the model list from src/catalog/models.json (docs/ARCHITECTURE
   esac
 
   local PNH="$TARGET/PlugNHeal"
-  local APP="$PNH/app" RUNTIME="$PNH/runtime" MODELS="$PNH/models" HOMEDIR="$PNH/home"
+  local APP="$PNH/app" RUNTIME="$PNH/runtime" HOMEDIR="$PNH/home"
   local LICENSES="$PNH/licenses" DOWNLOADS="$PNH/downloads"
   local OLLAMA_DIR="$RUNTIME/ollama" MARKER="$RUNTIME/runtime.json" BLOBS="$PNH/models/blobs"
   local MANIFESTS="$PNH/models/manifests/$REGISTRY_HOST"
@@ -557,7 +557,7 @@ The builder takes the model list from src/catalog/models.json (docs/ARCHITECTURE
 
   # 1. Models of the profile and their manifests (re-measured; refuse catalogue mismatches > tolerance)
   py profile "$CATALOG_FILE" "$PROFILE" >"$WORK/models.tsv"
-  local idx=0 id tag cbytes ns name t total hexd size mt
+  local idx=0 id tag cbytes ns name t total hexd size
   : >"$WORK/plan.tsv"
   : >"$WORK/blobs.tsv"
   while IFS=$'\t' read -r id tag cbytes <&3; do
@@ -569,7 +569,7 @@ The builder takes the model list from src/catalog/models.json (docs/ARCHITECTURE
     fi
     py entries "$mf" >"$WORK/entries-$idx.tsv"
     total=0
-    while IFS=$'\t' read -r hexd size mt <&4; do
+    while IFS=$'\t' read -r hexd size _ <&4; do
       total=$((total + size))
       printf '%s\t%s\t%s\t%s\n' "$hexd" "$size" "$ns/$name" "$tag" >>"$WORK/blobs.tsv"
     done 4<"$WORK/entries-$idx.tsv"

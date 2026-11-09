@@ -196,8 +196,9 @@ Person, die sich mit Computern auskennt.
 ## Welches KI-Modell nimmt mein Computer?
 
 Plug'n'Heal wählt selbst. Es misst den Speicher der Grafikkarte (VRAM) und den Arbeitsspeicher (RAM), nimmt das
-grösste Modell auf der SSD, das passt, lädt es und misst, wie schnell es ist. Schafft es weniger als 5 Token pro
-Sekunde, versucht es das nächstkleinere Modell.
+grösste Modell auf der SSD, das passt, lädt es und misst, wie schnell es ist. Ist es zu langsam (kleine Modelle unter
+5 Token pro Sekunde, das 9B unter 10, das 27B und die schnelle Variante unter 15) oder passt ein Modell für die
+Grafikkarte nicht fast ganz auf sie, versucht es das nächstkleinere Modell.
 
 | Ihr Computer | Modell, das es nimmt (wenn es auf der SSD ist) | Auf der SSD bei |
 |---|---|---|
@@ -279,12 +280,13 @@ einen Knopf dafür gibt es noch nicht.
 |---|---|---|
 | «Plug'n'Heal konnte nicht starten ... wahrscheinlich gesperrt» mit einem Code | Windows hat PowerShell nicht laufen lassen, meist auf einem Firmen- oder Schulcomputer | Die Person fragen, die den Computer betreut |
 | «Hier darf der Helfer nicht laufen» | PowerShell läuft in einem gesperrten Modus (Firmenregeln, vielleicht Smart App Control) | Wie oben. Dort kann Plug'n'Heal nicht arbeiten |
-| Es passiert gar nichts, oder Windows sagt, diese App lasse sich nicht ausführen | Windows im S-Modus erlaubt nur Apps aus dem Store | Im S-Modus läuft Plug'n'Heal nicht |
+| Es passiert gar nichts, oder Windows sagt, diese App lasse sich nicht ausführen, oder «Dieser Computer ist im S-Modus» | Windows im S-Modus erlaubt nur Apps aus dem Store | Im S-Modus läuft Plug'n'Heal nicht |
 | «Plug'n'Heal ist unvollstaendig: Der Ordner PlugNHeal fehlt» | Die SSD wurde nicht erstellt, oder Dateien wurden gelöscht | Den Assistenten noch einmal laufen lassen |
 | «Ohne Ihre Erlaubnis kann ich nur nachschauen» | Sie haben bei der Frage von Windows **Nein** geklickt | Neu starten und **Ja** klicken. Ein Standardbenutzer braucht dafür ein Administrator-Passwort |
 | «Der Helfer liess sich nicht starten» | Das Programm Ollama auf der SSD ist nicht angesprungen | Einen anderen USB-Anschluss versuchen. Fehlen Dateien (zum Beispiel vom Virenschutz entfernt), den Ordner `PlugNHeal\runtime` auf der SSD löschen und den Assistenten noch einmal laufen lassen |
 | «Auf dem Laufwerk fehlt der Helfer» | Kein KI-Modell auf der SSD | Den Assistenten noch einmal laufen lassen |
 | «Dieser Computer ist leider zu langsam» | Selbst das kleinste Modell auf der SSD schaffte keine 5 Token pro Sekunde | Andere Programme schliessen, ein Notebook ans Netzteil hängen, oder einen anderen Computer nehmen |
+| «Dieser Computer hat zu wenig Arbeitsspeicher» | Der Arbeitsspeicher ist kleiner, als selbst das kleinste Modell auf der SSD braucht (2B: 3 GB) | Einen Computer mit mehr Arbeitsspeicher nehmen |
 | «Plug'n'Heal ist schon offen» | Zweimal gestartet | Das Fenster unten in der Taskleiste suchen |
 | Der Assistent meldet «Diese SSD ist mit FAT32 formatiert» | Auf FAT32 passen keine Dateien über 4 GB | [SSD mit exFAT formatieren](#ssd-mit-exfat-formatieren) |
 | Der Assistent meldet «Auf der SSD ist zu wenig Platz» | Die Auswahl passt nicht | Eine kleinere Auswahl oder eine grössere SSD nehmen |

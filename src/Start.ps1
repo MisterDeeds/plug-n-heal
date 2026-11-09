@@ -3,6 +3,10 @@
     Plug'n'Heal entry point, started by START.cmd in the root of the drive.
 
 .DESCRIPTION
+    0. Checks for Windows in S mode (registry value SkuPolicyRequired = 1, the same one Get-PnhSMode reads) and
+       explains that Plug'n'Heal cannot run there. Real S mode normally blocks cmd.exe and powershell.exe
+       before this script starts (Windows then shows its own message); the check covers the cases where the
+       script does get to run, so that the person gets the right explanation instead of a later failure.
     1. Checks the PowerShell language mode. Company PCs (AppLocker/WDAC) and possibly Smart App Control force
        ConstrainedLanguage; then nothing of Plug'n'Heal can work, so it explains that and stops.
     2. Asks Windows once for administrator rights (UAC): it starts an elevated copy of itself with absolute
@@ -22,6 +26,7 @@
       20 = blocked by the language mode (message shown)
       21 = files missing or damaged (message shown)
       22 = the window could not be started (message shown)
+      23 = Windows is in S mode (message shown)
 
 .PARAMETER ReadOnly
     Do not ask for administrator rights; open the window in read-only mode.
@@ -113,6 +118,20 @@ function Write-StartLog {
         }
     } catch {
         $null = $_
+    }
+}
+
+function Test-StartSMode {
+    <#
+    .SYNOPSIS
+        $true when Windows reports S mode: HKLM\SYSTEM\CurrentControlSet\Control\CI\Policy, SkuPolicyRequired = 1
+        (the value Get-PnhSMode in lib\Hardware.ps1 reads). Cmdlets only: it runs before the language-mode check.
+    #>
+    try {
+        $policy = Get-ItemProperty -LiteralPath 'HKLM:\SYSTEM\CurrentControlSet\Control\CI\Policy' -Name 'SkuPolicyRequired' -ErrorAction Stop
+        return ([string]$policy.SkuPolicyRequired -eq '1')
+    } catch {
+        return $false
     }
 }
 
@@ -291,8 +310,16 @@ function Invoke-StartUi {
 }
 
 # -------------------------------------------------------------------------------------------------------------
-# 1. Language mode (everything above this line is ConstrainedLanguage-safe)
+# 1. S mode and language mode (everything above this line is ConstrainedLanguage-safe)
 # -------------------------------------------------------------------------------------------------------------
+if (Test-StartSMode) {
+    Initialize-StartFallbackLog
+    Write-StartLog -Level Error -Message 'Windows is in S mode (SkuPolicyRequired = 1), stopping'
+    Show-StartMessage -Key 'error.smode' -Warning `
+        -FallbackTitle "Plug'n'Heal" `
+        -FallbackText 'This computer is in S mode. In S mode Windows only allows apps from the Microsoft Store, so Plug''n''Heal cannot run here.'
+    exit 23
+}
 if (-not $script:FullLanguage) {
     Initialize-StartFallbackLog
     Write-StartLog -Level Error -Message ('Language mode is ' + $ExecutionContext.SessionState.LanguageMode + ', stopping')

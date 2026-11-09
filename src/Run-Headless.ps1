@@ -154,13 +154,19 @@ try {
     $selArgs = @{ Hardware = $hw; Installed = $installed }
     if ($Model) { $selArgs['Prefer'] = $Model }
     $sel = Select-PnhModel @selArgs
-    $entry = Get-PnhHeadlessMember $sel 'Model'
-    if (-not $entry) { throw ('No usable model installed (reason: {0}; installed: {1})' -f (Get-PnhHeadlessMember $sel 'Reason'), ($installed -join ', ')) }
+    if (-not (Get-PnhHeadlessMember $sel 'Model')) {
+        if ((Get-PnhHeadlessMember $sel 'Path') -eq 'too_weak') { throw ('This computer does not have enough memory for any installed model (RAM {0} GiB; installed: {1})' -f (Get-PnhHeadlessMember $sel 'RamGB'), ($installed -join ', ')) }
+        throw ('No usable model installed (reason: {0}; installed: {1})' -f (Get-PnhHeadlessMember $sel 'Reason'), ($installed -join ', '))
+    }
+    # Candidates: the chosen model first, then the fallbacks, each with its own GPU/CPU placement and context length
+    # (Get-PnhModelContext). Their Model entries already carry that ctx, which the agent sends with every request.
+    $candidates = @(@(Get-PnhHeadlessMember $sel 'Candidates') | Where-Object { $_ })
+    if ($candidates.Count -eq 0) { throw 'Select-PnhModel returned no candidates' }
+    $candidate = $candidates[0]
+    $entry = Get-PnhHeadlessMember $candidate 'Model'
     if ($Model -and [string](Get-PnhHeadlessMember $entry 'tag') -ne $Model) { throw ('Model {0} is not installed' -f $Model) }
-    $ctx = [int](Get-PnhHeadlessMember $sel 'Ctx')
-    if ($ctx -le 0) { $ctx = [int](Get-PnhHeadlessMember $entry 'ctx') }
-    if ($ctx -le 0) { $ctx = 16384 }
-    Write-PnhHeadlessLine ('  model {0}, ctx {1}, reason {2}' -f (Get-PnhHeadlessMember $entry 'tag'), $ctx, (Get-PnhHeadlessMember $sel 'Reason'))
+    $ctx = [int](Get-PnhHeadlessMember $candidate 'Ctx')
+    Write-PnhHeadlessLine ('  model {0}, ctx {1}, gpu {2}, reason {3}' -f (Get-PnhHeadlessMember $entry 'tag'), $ctx, (Get-PnhHeadlessMember $candidate 'UseGpu'), (Get-PnhHeadlessMember $sel 'Reason'))
 
     # 3. Ollama
     Write-PnhHeadlessLine ('> ' + (Get-PnhText -Key 'step.start' -Language $lang))
@@ -170,27 +176,25 @@ try {
     } else {
         $server = Start-PnhOllama -Paths (Get-PnhPaths) -ContextLength $ctx
         $startedServer = $true
-        $fit = Test-PnhModelFit -Server $server -Model ([string]$entry.tag)
-        Write-PnhHeadlessLine ('  fit: ok={0} gpu={1}% {2} tokens/s' -f $fit.Ok, $fit.OnGpuPercent, $fit.TokensPerSecond)
+        $fit = Test-PnhModelFit -Server $server -Model ([string]$entry.tag) -ModelEntry $entry -UseGpu:([bool](Get-PnhHeadlessMember $candidate 'UseGpu')) -NumCtx $ctx
+        Write-PnhHeadlessLine ('  fit: ok={0} reason={1} gpu={2}% {3} tokens/s' -f $fit.Ok, $fit.Reason, $fit.OnGpuPercent, $fit.TokensPerSecond)
         if (-not $fit.Ok -and -not $Model) {
-            foreach ($fb in @(Get-PnhHeadlessMember $sel 'Fallbacks')) {
-                if (-not $fb) { continue }
-                $fit = Test-PnhModelFit -Server $server -Model ([string]$fb.tag)
-                Write-PnhHeadlessLine ('  step down to {0}: ok={1} {2} tokens/s' -f $fb.tag, $fit.Ok, $fit.TokensPerSecond)
-                $entry = $fb
+            foreach ($fb in @($candidates | Select-Object -Skip 1)) {
+                $fbEntry = Get-PnhHeadlessMember $fb 'Model'
+                $fbCtx = [int](Get-PnhHeadlessMember $fb 'Ctx')
+                $fit = Test-PnhModelFit -Server $server -Model ([string]$fbEntry.tag) -ModelEntry $fbEntry -UseGpu:([bool](Get-PnhHeadlessMember $fb 'UseGpu')) -NumCtx $fbCtx
+                Write-PnhHeadlessLine ('  step down to {0} (ctx {1}): ok={2} reason={3} {4} tokens/s' -f $fbEntry.tag, $fbCtx, $fit.Ok, $fit.Reason, $fit.TokensPerSecond)
+                $entry = $fbEntry
+                $ctx = $fbCtx
                 if ($fit.Ok) { break }
             }
         }
     }
     Write-PnhHeadlessLine ('  Ollama {0} at {1}' -f (Get-PnhHeadlessMember $server 'Version'), (Get-PnhHeadlessMember $server 'BaseUrl'))
 
-    # 4. Agent (the catalogue entry gets the context length the server runs with, so no reload happens)
-    $agentEntry = @{}
-    if ($entry -is [System.Collections.IDictionary]) { foreach ($k in $entry.Keys) { $agentEntry[[string]$k] = $entry[$k] } }
-    else { foreach ($p in $entry.PSObject.Properties) { $agentEntry[$p.Name] = $p.Value } }
-    $agentEntry['ctx'] = $ctx
+    # 4. Agent (the candidate's entry carries its own ctx, the one the fit test loaded the model with: no reload)
     $agentArgs = @{
-        Server = $server; ModelEntry = $agentEntry; Category = $Category; RunFolder = $runFolder
+        Server = $server; ModelEntry = $entry; Category = $Category; RunFolder = $runFolder
         OnEvent = $onEvent; Confirm = $confirm; MaxRounds = $MaxRounds; Language = $lang
     }
     if ($UserText) { $agentArgs['UserText'] = $UserText }

@@ -267,6 +267,39 @@ Describe 'Model catalogue and profiles' {
     ) {
         Get-PnhSuggestedDriveGB -Bytes ([int64]$Bytes) | Should -Be $Gb
     }
+    It 'wizard choice <Name> with the real catalogue: about <Total> GB on the drive, SSD <Gb> GB, adds <Added>' -TestCases @(
+        @{ Name = 'small'; Total = '8.1'; Gb = 16; Added = '5.3 GB'; Says = '2B' }
+        @{ Name = 'standard'; Total = '32.4'; Gb = 64; Added = '24.3 GB'; Says = '24 GB' }
+        @{ Name = 'full'; Total = '65.4'; Gb = 128; Added = '33.1 GB'; Says = '16 or 20 GB' }
+    ) {
+        $real = [System.IO.Path]::Combine($PSScriptRoot, '..', 'src', 'catalog', 'models.json')
+        $rc = Read-PnhBuildCatalog -Path $real
+        $v = Read-PnhVersions -Path ([System.IO.Path]::Combine($PSScriptRoot, '..', 'builder', 'versions.json'))
+        $o = Get-PnhProfileOption -Catalog $rc -Versions $v -Name $Name
+        $o.DriveBytes | Should -Be ((Get-PnhProfileBytes -Catalog $rc -Name $Name) + [int64]$v.ollama.extractedBytes + [int64]$v.reserveBytes)
+        Format-PnhBytes $o.DriveBytes | Should -Be ($Total + ' GB')
+        $o.DriveGB | Should -Be $Gb
+        $o.Title | Should -Match ([regex]::Escape($Total + ' GB'))
+        $o.Text | Should -Match ([regex]::Escape('(' + $Added))
+        $o.Text | Should -Match ([regex]::Escape($Says))
+        $o.Text | Should -Match ([regex]::Escape('SSD of ' + $Gb + ' GB'))
+        $o.Text | Should -Not -Match '\{\d\}'
+    }
+    It 'wizard texts exist in German and English with the same placeholders' {
+        try {
+            foreach ($l in 'de', 'en') {
+                Set-PnhBuildLanguage -Language $l
+                foreach ($k in 'profile.small.text', 'profile.standard.text', 'profile.full.text') {
+                    $t = Get-PnhBuildText -Key $k
+                    $t | Should -Not -Be $k
+                    $t | Should -Match '\{0\}'
+                    $t | Should -Match '\{1\}'
+                }
+            }
+        } finally {
+            Set-PnhBuildLanguage -Language 'en'
+        }
+    }
 }
 
 Describe 'Sizes and space' {
@@ -411,6 +444,35 @@ Describe 'Copying src\ to the drive' {
         Test-Path -LiteralPath $p.StartCmd | Should -BeTrue
         Get-Content -LiteralPath (Join-Path $drive 'mine.txt') | Should -Be 'user file'
         @(Get-ChildItem -LiteralPath $drive -Force | ForEach-Object { $_.Name } | Sort-Object) | Should -Be @('mine.txt', 'PlugNHeal', 'START.cmd')
+    }
+    It 'removes the Mark-of-the-Web from everything under PlugNHeal and from START.cmd, and never fails the build' {
+        $drive = Join-Path $TestDrive 'd-motw'
+        $p = Get-PnhBuildPaths -DriveRoot $drive
+        [void](New-Item -ItemType Directory -Force -Path (Join-Path $p.App 'lib'), $p.OllamaDir)
+        Set-Content -LiteralPath (Join-Path (Join-Path $p.App 'lib') 'Common.ps1') -Value '# x'
+        Set-Content -LiteralPath $p.OllamaExe -Value 'x'
+        Set-Content -LiteralPath $p.StartCmd -Value '@echo off'
+        Set-Content -LiteralPath (Join-Path $drive 'mine.txt') -Value 'user file'
+        $stub = $false
+        if (-not (Get-Command -Name Unblock-File -ErrorAction SilentlyContinue)) {
+            # PowerShell on Linux has no Unblock-File, and Pester can only mock commands that exist.
+            function global:Unblock-File { param([string]$LiteralPath, [string]$Path) }
+            $stub = $true
+        }
+        try {
+            Mock Unblock-File { }
+            $n = Unblock-PnhDriveFiles -Paths $p
+            $n | Should -Be 3
+            Should -Invoke Unblock-File -Times 3 -Exactly
+            Should -Invoke Unblock-File -Times 1 -Exactly -ParameterFilter { $LiteralPath -eq $p.StartCmd }
+            Should -Invoke Unblock-File -Times 1 -Exactly -ParameterFilter { $LiteralPath -eq $p.OllamaExe }
+            Should -Invoke Unblock-File -Times 0 -Exactly -ParameterFilter { $LiteralPath -like '*mine.txt' }
+            # exFAT has no streams: a failing Unblock-File is logged, never thrown
+            Mock Unblock-File { throw 'The filename, directory name, or volume label syntax is incorrect.' }
+            { Unblock-PnhDriveFiles -Paths $p } | Should -Not -Throw
+        } finally {
+            if ($stub) { Remove-Item -Path 'Function:\Unblock-File' -ErrorAction SilentlyContinue }
+        }
     }
     It 'refuses a src without START.cmd' {
         $src = Join-Path $TestDrive 'emptysrc'

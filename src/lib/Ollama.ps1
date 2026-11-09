@@ -227,7 +227,8 @@ function Start-PnhOllama {
         Fixed port; default: a free port.
     .PARAMETER ContextLength
         OLLAMA_CONTEXT_LENGTH and the default num_ctx of Invoke-PnhChat (default 16384; use the Ctx of
-        Select-PnhModel).
+        Select-PnhModel). After a step-down the fallback's own context goes with every request
+        (Test-PnhModelFit -NumCtx, Invoke-PnhAgent through ModelEntry.ctx), so the server is not restarted.
     .PARAMETER StartTimeoutSeconds
         Default 60.
     .PARAMETER ExtraEnvironment
@@ -578,6 +579,39 @@ function Get-PnhLoadedModels {
     }
 }
 
+function Get-PnhFitThreshold {
+    <#
+    .SYNOPSIS
+        Pass marks of Test-PnhModelFit for one model: @{MinTokensPerSecond; MinGpuPercent}.
+    .DESCRIPTION
+        Generation speed (tokens per second, think off, measured over -NumPredict tokens), by catalogue tier:
+          tier 1-2 (and tier 0 = ad-hoc models)   5  a 300-token round takes about a minute (CPU tiers)
+          tier 3                                 10  9B models without thinking, meant for the GPU
+          tier 4                                 15  thinking models: one round has several hundred tokens
+        GPU share (size_vram / size from /api/ps), only for GPU tiers (3-4) that were chosen for the GPU
+        (Select-PnhModel UseGpu) and are not partialOffload models: at least 90 %. Below that Ollama has moved
+        layers to the CPU (VRAM used by something else, or the minVramGB estimate is too low), which costs
+        far more speed than the short test shows. CPU tiers (1-2) and partialOffload models are judged by
+        speed only; on the CPU path the GPU share is never checked.
+    .PARAMETER Tier
+        Catalogue tier (0 for ad-hoc models).
+    .PARAMETER UseGpu
+        The model was chosen for the GPU.
+    .PARAMETER PartialOffload
+        Running partly on the CPU is intended (catalogue field partialOffload).
+    .OUTPUTS
+        [hashtable]
+    #>
+    [CmdletBinding()]
+    [OutputType([hashtable])]
+    param([int]$Tier, [switch]$UseGpu, [switch]$PartialOffload)
+    $minTps = 5.0
+    if ($Tier -eq 3) { $minTps = 10.0 } elseif ($Tier -ge 4) { $minTps = 15.0 }
+    $minGpu = 0
+    if ($UseGpu -and $Tier -ge 3 -and -not $PartialOffload) { $minGpu = 90 }
+    return @{ MinTokensPerSecond = $minTps; MinGpuPercent = $minGpu }
+}
+
 function Test-PnhModelFit {
     <#
     .SYNOPSIS
@@ -586,42 +620,60 @@ function Test-PnhModelFit {
         Sends one short chat (think off, temperature 0, num_predict -NumPredict, same num_ctx as the agent
         will use), then reads /api/ps. Returns
           @{OnGpuPercent; TokensPerSecond; Ok; Reason; PromptTokensPerSecond; LoadMs; DurationMs;
-            SizeBytes; SizeVramBytes; ContextLength; Error}
-        Ok = no error, TokensPerSecond >= -MinTokensPerSecond and OnGpuPercent >= -MinGpuPercent.
+            SizeBytes; SizeVramBytes; ContextLength; MinTokensPerSecond; MinGpuPercent; Error}
+        Ok = no error, TokensPerSecond >= MinTokensPerSecond and OnGpuPercent >= MinGpuPercent.
         Reason: 'ok', 'error', 'not_loaded', 'slow' or 'gpu_share'.
-        Default thresholds: 5 tokens/s (a 300-token round then takes about a minute), any GPU share; pass
-        -MinGpuPercent 100 when Select-PnhModel said UseGpu and the model is not a partialOffload model.
+        Thresholds come from Get-PnhFitThreshold (tier and partialOffload of -ModelEntry, -UseGpu): GPU tiers
+        chosen for the GPU need at least 90 % on the GPU and 10 (tier 3) or 15 (tier 4) tokens/s; CPU tiers
+        need 5 tokens/s. -MinTokensPerSecond and -MinGpuPercent override them.
     .PARAMETER Server
         Result of Start-PnhOllama.
     .PARAMETER Model
         Model tag.
+    .PARAMETER ModelEntry
+        Catalogue entry of the model (tier, partialOffload); without it tier 0 rules apply (5 tokens/s).
+    .PARAMETER UseGpu
+        Select-PnhModel chose the model for the GPU (Candidates[i].UseGpu).
     .PARAMETER NumCtx
-        Default: Server.ContextLength.
+        Default: Server.ContextLength. Pass the candidate's Ctx, so that the test loads the model exactly as
+        the agent will use it.
     .PARAMETER MinTokensPerSecond
-        Default 5.
+        Overrides the tier minimum.
     .PARAMETER MinGpuPercent
-        Default 0.
+        Overrides the GPU share minimum.
     .PARAMETER NumPredict
         Tokens to generate for the measurement, default 48.
     .PARAMETER TimeoutSeconds
         Default 300 (includes loading the model from the SSD).
     .EXAMPLE
-        $fit = Test-PnhModelFit -Server $server -Model $sel.Model.tag -NumCtx $sel.Ctx
+        $c = $sel.Candidates[0]
+        $fit = Test-PnhModelFit -Server $server -Model $c.Tag -ModelEntry $c.Model -UseGpu:$c.UseGpu -NumCtx $c.Ctx
     #>
     [CmdletBinding()]
     [OutputType([hashtable])]
     param(
         [Parameter(Mandatory = $true)][object]$Server,
         [Parameter(Mandatory = $true)][string]$Model,
+        [object]$ModelEntry,
+        [switch]$UseGpu,
         [int]$NumCtx,
-        [double]$MinTokensPerSecond = 5,
-        [int]$MinGpuPercent = 0,
+        [double]$MinTokensPerSecond,
+        [int]$MinGpuPercent,
         [int]$NumPredict = 48,
         [int]$TimeoutSeconds = 300
     )
+    $tier = 0
+    $tierRaw = Get-PnhValue $ModelEntry 'tier'
+    if ($null -ne $tierRaw) {
+        try { $tier = [int]$tierRaw } catch { $tier = 0 }
+    }
+    $limits = Get-PnhFitThreshold -Tier $tier -UseGpu:$UseGpu -PartialOffload:((Get-PnhValue $ModelEntry 'partialOffload') -eq $true)
+    if (-not $PSBoundParameters.ContainsKey('MinTokensPerSecond')) { $MinTokensPerSecond = [double]$limits.MinTokensPerSecond }
+    if (-not $PSBoundParameters.ContainsKey('MinGpuPercent')) { $MinGpuPercent = [int]$limits.MinGpuPercent }
     $result = @{
         OnGpuPercent = 0; TokensPerSecond = 0.0; Ok = $false; Reason = 'error'; PromptTokensPerSecond = $null
         LoadMs = $null; DurationMs = 0; SizeBytes = $null; SizeVramBytes = $null; ContextLength = $null; Error = $null
+        MinTokensPerSecond = $MinTokensPerSecond; MinGpuPercent = $MinGpuPercent
     }
     $messages = @(@{ role = 'user'; content = 'Count from 1 to 60, separated by commas. Write only the numbers.' })
     $chatArgs = @{
@@ -672,6 +724,7 @@ function Test-PnhModelFit {
     Write-PnhLog -Message 'Model fit measured' -Data @{
         Model = $Model; Ok = $result.Ok; Reason = $result.Reason; OnGpuPercent = $result.OnGpuPercent
         TokensPerSecond = $result.TokensPerSecond; PromptTokensPerSecond = $result.PromptTokensPerSecond; LoadMs = $result.LoadMs
+        UseGpu = [bool]$UseGpu; Tier = $tier; NumCtx = $NumCtx; MinTokensPerSecond = $MinTokensPerSecond; MinGpuPercent = $MinGpuPercent
     }
     return $result
 }

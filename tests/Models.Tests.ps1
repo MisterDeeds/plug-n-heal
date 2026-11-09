@@ -82,6 +82,23 @@ Describe 'Catalogue src/catalog/models.json' {
     }
 }
 
+Describe 'Get-PnhModelContext' {
+    It '<Case>' -ForEach @(
+        @{ Case = 'GPU: catalogue ctx'; Entry = @{ ctx = 32768 }; Gpu = $true; Expect = 32768 }
+        @{ Case = 'CPU: capped at 16384'; Entry = @{ ctx = 32768 }; Gpu = $false; Expect = 16384 }
+        @{ Case = 'CPU: smaller ctx stays'; Entry = @{ ctx = 8192 }; Gpu = $false; Expect = 8192 }
+        @{ Case = 'missing ctx counts as 16384'; Entry = @{ tag = 'x' }; Gpu = $true; Expect = 16384 }
+        @{ Case = 'invalid ctx counts as 16384'; Entry = @{ ctx = 'lots' }; Gpu = $true; Expect = 16384 }
+    ) {
+        Get-PnhModelContext -ModelEntry $Entry -UseGpu:$Gpu | Should -Be $Expect
+    }
+    It 'works with catalogue entries (PSCustomObject)' {
+        $big = @($catalog.models | Where-Object { $_.tag -eq 'qwen3.8:27b-q4_K_M' })[0]
+        Get-PnhModelContext -ModelEntry $big -UseGpu | Should -Be 32768
+        Get-PnhModelContext -ModelEntry $big | Should -Be 16384
+    }
+}
+
 Describe 'Get-PnhInstalledModels' {
     BeforeAll {
         $models = Join-Path $TestDrive 'models'
@@ -247,6 +264,48 @@ Describe 'Select-PnhModel' {
         $sel.Model.tag | Should -Be 'qwen3.5:9b-q4_K_M'
         $sel2 = Select-PnhModel -Hardware @{ BestDedicatedVramBytes = [uint64](12288 * 1MB); RamBytes = [uint64](16 * 1GB) } -Installed $allTags -Catalog $catalog
         $sel2.Model.tag | Should -Be 'qwen3.5:9b-q4_K_M'
+    }
+
+    It 'gives every candidate its own placement and context: a 24 GB card steps down from 32k to 16k' {
+        $sel = Select-PnhModel -Hardware (New-Hw -VramMiB 24564 -RamGiB 31.8) -Installed $allTags -Catalog $catalog
+        $c = @($sel.Candidates)
+        $c.Count | Should -Be 6
+        @($c | ForEach-Object { $_.Model.tag }) | Should -Be @('qwen3.8:27b-q4_K_M', 'qwen3.6:35b-a3b-mtp-q4_K_M', 'qwen3.5:9b-q8_0', 'qwen3.5:9b-q4_K_M', 'qwen3.5:4b-q4_K_M', 'qwen3.5:2b-q4_K_M')
+        @($c | ForEach-Object { $_.Ctx }) | Should -Be @(32768, 32768, 32768, 32768, 16384, 16384)
+        @($c | ForEach-Object { $_.UseGpu }) | Should -Be @($true, $true, $true, $true, $true, $true)
+        foreach ($x in $c) {
+            $x.Model.ctx | Should -Be $x.Ctx -Because 'the entry handed to the agent carries the context it was tested with'
+            $x.Tag | Should -Be $x.Model.tag
+        }
+        $c[0].Ctx | Should -Be $sel.Ctx
+        $c[0].UseGpu | Should -Be $sel.UseGpu
+    }
+
+    It 'caps the context of CPU candidates and does not change the catalogue' {
+        $sel = Select-PnhModel -Hardware (New-Hw -VramMiB 0 -RamGiB 63.8) -Installed $allTags -Prefer 'qwen3.5:9b-q4_K_M' -Catalog $catalog
+        $c = @($sel.Candidates)
+        @($c | ForEach-Object { $_.Model.tag }) | Should -Be @('qwen3.5:9b-q4_K_M', 'qwen3.5:4b-q4_K_M', 'qwen3.5:2b-q4_K_M')
+        @($c | ForEach-Object { $_.Ctx }) | Should -Be @(16384, 16384, 16384)
+        @($c | ForEach-Object { $_.UseGpu }) | Should -Be @($false, $false, $false)
+        $c[0].Model.ctx | Should -Be 16384
+        @($catalog.models | Where-Object { $_.tag -eq 'qwen3.5:9b-q4_K_M' })[0].ctx | Should -Be 32768
+        $c[0].Model.think | Should -BeFalse
+        $c[0].Model.tier | Should -Be 3
+    }
+
+    It 'returns no model (too_weak) when the RAM is below what every installed model needs' {
+        $sel = Select-PnhModel -Hardware (New-Hw -VramMiB 0 -RamGiB 2.8) -Installed $allTags -Catalog $catalog
+        $sel.Model | Should -BeNullOrEmpty
+        $sel.Path | Should -Be 'too_weak'
+        $sel.Reason | Should -Be 'model.reason.weak_hardware'
+        @($sel.Candidates).Count | Should -Be 0
+        @($sel.Fallbacks).Count | Should -Be 0
+    }
+
+    It 'still tries the smallest model when the RAM is unknown' {
+        $sel = Select-PnhModel -Hardware @{ Gpus = @(); BestDedicatedVramBytes = 0; RamBytes = 0 } -Installed $allTags -Catalog $catalog
+        $sel.Model.tag | Should -Be 'qwen3.5:2b-q4_K_M'
+        $sel.Path | Should -Be 'weak'
     }
 
     It 'reads the installed models from disk when -Installed is not given' {

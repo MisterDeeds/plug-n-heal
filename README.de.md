@@ -10,8 +10,10 @@ häufige Probleme. Ohne Internet.**
 
 > [!IMPORTANT]
 > **Stand: Version 0.1, noch früh.** Der Programmcode wird automatisch getestet (Pester, auf Linux und Windows,
-> mit Windows PowerShell 5.1 und PowerShell 7). Die Reparaturschritte sind mit dem PowerShell-Parser und mit
-> Tests geprüft, aber **noch nicht auf echten Heim-PCs ausprobiert** (siehe
+> mit Windows PowerShell 5.1 und PowerShell 7). Bei jeder Änderung läuft zudem ein **Gesamttest unter Windows**
+> (Windows-Server-Testrechner von GitHub, Windows PowerShell 5.1, nur Prozessor): Er baut eine SSD mit dem
+> kleinsten Modell, stoppt den Druckdienst und prüft, dass Plug'n'Heal das selbst findet und behebt (etwa eine
+> Minute). Die meisten Reparaturschritte sind aber **noch nicht auf echten Heim-PCs ausprobiert** (siehe
 > [docs/TOOLBOX.md](docs/TOOLBOX.md#11-what-still-needs-real-windows), englisch). Probieren Sie es zuerst an
 > einem Computer aus, an dem nicht viel hängt, und
 > [erzählen Sie uns, wie es lief](https://github.com/MisterDeeds/plug-n-heal/issues/new/choose).

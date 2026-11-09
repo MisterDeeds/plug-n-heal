@@ -167,10 +167,9 @@ Describe 'Start-PnhHidden' {
         $r.StdOut.Trim() | Should -Be 'out'
         $r.StdErr.Trim() | Should -Be 'err'
         $r.TimedOut | Should -BeFalse
-        # Not -BeNullOrEmpty: that converts the object to string, and on .NET Framework (Windows PowerShell 5.1)
-        # Process.ToString() reads ProcessName, which throws once the process has exited.
-        ($null -ne $r.Process) | Should -BeTrue
-        $r.Process | Should -BeOfType ([System.Diagnostics.Process])
+        # Never pipe the Process object into Should: Pester converts it to string, and on .NET Framework
+        # (Windows PowerShell 5.1) Process.ToString() reads ProcessName, which throws once the process has exited.
+        ($r.Process -is [System.Diagnostics.Process]) | Should -BeTrue
     }
 
     It 'does not dead-lock on large output on both streams' {

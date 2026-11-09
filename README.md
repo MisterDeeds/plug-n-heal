@@ -9,8 +9,10 @@ English | [Deutsch](README.de.md)
 
 > [!IMPORTANT]
 > **Status: version 0.1, early.** The code has automated tests (Pester) that run on Linux and Windows in CI,
-> for Windows PowerShell 5.1 and PowerShell 7. The repair steps are checked by the PowerShell parser and by
-> unit tests, but they have **not yet been tried on real home PCs** (see
+> for Windows PowerShell 5.1 and PowerShell 7. On every change an **end-to-end test on Windows** (GitHub's
+> Windows Server runner, Windows PowerShell 5.1, CPU only) builds a drive with the smallest model, stops the
+> print service and checks that Plug'n'Heal finds and fixes it on its own (about one minute). Most repair steps
+> have **not yet been tried on real home PCs** (see
 > [docs/TOOLBOX.md](docs/TOOLBOX.md#11-what-still-needs-real-windows)). Please try it first on a computer that
 > does not matter much, and [tell us how it went](https://github.com/MisterDeeds/plug-n-heal/issues/new/choose).
 

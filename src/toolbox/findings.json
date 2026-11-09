@@ -1,0 +1,897 @@
+{
+  "schema": 1,
+  "findings": [
+    {
+      "code": "NOT_ADMIN",
+      "severity": 4,
+      "meaning": {
+        "de": "Die Prüfung lief ohne Adminrechte; einige Messungen fehlen.",
+        "en": "The check ran without administrator rights; some measurements are missing."
+      },
+      "candidates": [],
+      "stop": null,
+      "blocks": []
+    },
+    {
+      "code": "ELEVATED_OTHER_USER",
+      "severity": 4,
+      "meaning": {
+        "de": "Mit den Adminrechten eines anderen Kontos gestartet: Einstellungen des angemeldeten Benutzers (Ton, Proxy, Explorer, Standarddrucker) dürfen so nicht geändert werden.",
+        "en": "Started with another account's administrator rights: settings of the signed-in user (sound, proxy, Explorer, default printer) must not be changed this way."
+      },
+      "candidates": [],
+      "stop": null,
+      "blocks": []
+    },
+    {
+      "code": "MANAGED_DEVICE",
+      "severity": 1,
+      "meaning": {
+        "de": "Das Gerät gehört zu einer Firma oder Schule (Domäne, Entra ID oder Geräteverwaltung).",
+        "en": "The device belongs to a company or school (domain, Entra ID or device management)."
+      },
+      "candidates": [],
+      "stop": {
+        "de": "Dieses Gerät wird von einer Firma oder Schule verwaltet. Ich schaue nur nach und ändere keine Netzwerk-, Proxy-, DNS-, Zeit- oder Update-Einstellungen. Bitte wenden Sie sich mit dem Bericht an die zuständige IT.",
+        "en": "This device is managed by a company or school. I only look and do not change network, proxy, DNS, time or update settings. Please contact the responsible IT team with the report."
+      },
+      "blocks": [
+        "net.*",
+        "wifi.forget_profile",
+        "wu.*",
+        "time.*"
+      ]
+    },
+    {
+      "code": "PENDING_REBOOT",
+      "severity": 3,
+      "meaning": {
+        "de": "Windows wartet auf einen Neustart.",
+        "en": "Windows is waiting for a restart."
+      },
+      "candidates": [
+        "sys.restart"
+      ],
+      "stop": null,
+      "blocks": []
+    },
+    {
+      "code": "UPTIME_LONG",
+      "severity": 3,
+      "meaning": {
+        "de": "Der Computer wurde seit über 7 Tagen nicht richtig neu gestartet.",
+        "en": "The computer has not been properly restarted for more than 7 days."
+      },
+      "candidates": [
+        "sys.restart",
+        "boot.fast_startup_off"
+      ],
+      "stop": null,
+      "blocks": []
+    },
+    {
+      "code": "C_FREE_CRITICAL",
+      "severity": 1,
+      "meaning": {
+        "de": "Auf dem Systemlaufwerk sind weniger als 2 GB frei.",
+        "en": "Less than 2 GB is free on the system drive."
+      },
+      "candidates": [
+        "disk.report",
+        "disk.clean_user_temp",
+        "disk.clean_windows_temp",
+        "disk.clean_delivery_optimization",
+        "disk.move_crash_dumps",
+        "disk.hibernation_off",
+        "disk.open_storage_settings"
+      ],
+      "stop": null,
+      "blocks": []
+    },
+    {
+      "code": "C_FREE_LOW",
+      "severity": 3,
+      "meaning": {
+        "de": "Auf dem Systemlaufwerk ist wenig Platz frei.",
+        "en": "Little space is free on the system drive."
+      },
+      "candidates": [
+        "disk.report",
+        "disk.clean_user_temp",
+        "disk.clean_windows_temp",
+        "disk.clean_delivery_optimization",
+        "disk.open_storage_settings"
+      ],
+      "stop": null,
+      "blocks": []
+    },
+    {
+      "code": "VOLUME_NOT_HEALTHY",
+      "severity": 2,
+      "meaning": {
+        "de": "Ein Laufwerk meldet Fehler im Dateisystem.",
+        "en": "A drive reports file system errors."
+      },
+      "candidates": [
+        "fs.health",
+        "fs.scan_online"
+      ],
+      "stop": null,
+      "blocks": []
+    },
+    {
+      "code": "DISK_UNHEALTHY",
+      "severity": 1,
+      "meaning": {
+        "de": "Eine Festplatte meldet einen schlechten Zustand.",
+        "en": "A disk reports a bad health state."
+      },
+      "candidates": [
+        "fs.health"
+      ],
+      "stop": {
+        "de": "Eine Festplatte meldet einen schlechten Zustand. Sichern Sie zuerst Ihre wichtigen Dateien. Ich starte nichts neu und lasse keine Laufwerksprüfung laufen, weil das eine sterbende Festplatte zusätzlich belastet.",
+        "en": "A disk reports a bad health state. Back up your important files first. I do not restart anything or run a disk check, because that puts extra strain on a dying disk."
+      },
+      "blocks": [
+        "@reboot",
+        "fs.*",
+        "sysfile.*",
+        "disk.move_crash_dumps"
+      ]
+    },
+    {
+      "code": "DISK_ERRORS_EVENTS",
+      "severity": 3,
+      "meaning": {
+        "de": "Im Ereignisprotokoll stehen Fehler von Festplatte oder Dateisystem.",
+        "en": "The event log contains disk or file system errors."
+      },
+      "candidates": [
+        "fs.health"
+      ],
+      "stop": null,
+      "blocks": []
+    },
+    {
+      "code": "NO_ADAPTER_UP",
+      "severity": 2,
+      "meaning": {
+        "de": "Keine Netzwerkkarte ist verbunden.",
+        "en": "No network adapter is connected."
+      },
+      "candidates": [
+        "net.enable_adapter",
+        "wifi.report",
+        "net.restart_adapter"
+      ],
+      "stop": null,
+      "blocks": []
+    },
+    {
+      "code": "ADAPTER_DISABLED",
+      "severity": 2,
+      "meaning": {
+        "de": "Eine Netzwerkkarte ist in Windows ausgeschaltet.",
+        "en": "A network adapter is switched off in Windows."
+      },
+      "candidates": [
+        "net.enable_adapter"
+      ],
+      "stop": null,
+      "blocks": []
+    },
+    {
+      "code": "NET_SERVICE_STOPPED",
+      "severity": 2,
+      "meaning": {
+        "de": "Ein wichtiger Netzwerkdienst (DHCP, DNS-Client, Netzwerkerkennung) läuft nicht.",
+        "en": "An important network service (DHCP, DNS client, network awareness) is not running."
+      },
+      "candidates": [
+        "sys.restart"
+      ],
+      "stop": null,
+      "blocks": []
+    },
+    {
+      "code": "APIPA_ADDRESS",
+      "severity": 2,
+      "meaning": {
+        "de": "Die Adresse beginnt mit 169.254: der Router hat keine Adresse vergeben.",
+        "en": "The address starts with 169.254: the router did not hand out an address."
+      },
+      "candidates": [
+        "net.renew_dhcp",
+        "net.restart_adapter"
+      ],
+      "stop": null,
+      "blocks": []
+    },
+    {
+      "code": "NO_DEFAULT_GATEWAY",
+      "severity": 2,
+      "meaning": {
+        "de": "Es ist kein Router (Standardgateway) eingetragen.",
+        "en": "No router (default gateway) is configured."
+      },
+      "candidates": [
+        "net.renew_dhcp",
+        "net.restart_adapter"
+      ],
+      "stop": null,
+      "blocks": []
+    },
+    {
+      "code": "LOOPBACK_FAILS",
+      "severity": 2,
+      "meaning": {
+        "de": "Der Test an sich selbst (127.0.0.1) scheitert: die Netzwerktechnik von Windows ist defekt.",
+        "en": "The self-test (127.0.0.1) fails: Windows networking is broken."
+      },
+      "candidates": [
+        "net.triage_general_failure",
+        "net.reset_winsock",
+        "net.reset_tcpip"
+      ],
+      "stop": null,
+      "blocks": []
+    },
+    {
+      "code": "PING_GENERAL_FAILURE",
+      "severity": 2,
+      "meaning": {
+        "de": "Ping meldet \"Allgemeiner Fehler\": Windows sendet das Paket gar nicht erst.",
+        "en": "Ping reports \"General failure\": Windows does not even send the packet."
+      },
+      "candidates": [
+        "net.triage_general_failure",
+        "sec.detect_isolation",
+        "net.wfp_drop_events"
+      ],
+      "stop": null,
+      "blocks": []
+    },
+    {
+      "code": "GW_UNREACHABLE",
+      "severity": 2,
+      "meaning": {
+        "de": "Der Router antwortet nicht.",
+        "en": "The router does not answer."
+      },
+      "candidates": [
+        "net.restart_adapter",
+        "net.renew_dhcp",
+        "wifi.report"
+      ],
+      "stop": null,
+      "blocks": []
+    },
+    {
+      "code": "TCP_BLOCKED_LOCAL",
+      "severity": 2,
+      "meaning": {
+        "de": "Verbindungen werden auf diesem Computer verweigert (Fehler 10013): ein Filter blockiert.",
+        "en": "Connections are refused on this computer (error 10013): a filter blocks them."
+      },
+      "candidates": [
+        "net.triage_general_failure",
+        "sec.detect_isolation",
+        "net.wfp_drop_events",
+        "net.firewall_report"
+      ],
+      "stop": null,
+      "blocks": []
+    },
+    {
+      "code": "ONLY_DNS_WORKS",
+      "severity": 2,
+      "meaning": {
+        "de": "Namensauflösung (DNS) antwortet, aber weder Ping noch Verbindungen ins Internet gehen.",
+        "en": "Name lookup (DNS) answers, but neither ping nor connections to the internet work."
+      },
+      "candidates": [
+        "sec.detect_isolation",
+        "net.wfp_drop_events",
+        "net.vpn_report"
+      ],
+      "stop": null,
+      "blocks": []
+    },
+    {
+      "code": "DNS_FAILS_NET_OK",
+      "severity": 2,
+      "meaning": {
+        "de": "Das Internet ist erreichbar, aber die Namensauflösung (DNS) antwortet nicht.",
+        "en": "The internet is reachable, but name lookup (DNS) does not answer."
+      },
+      "candidates": [
+        "net.dns_auto",
+        "net.flush_dns",
+        "net.hosts_reset"
+      ],
+      "stop": null,
+      "blocks": []
+    },
+    {
+      "code": "MANUAL_DNS",
+      "severity": 3,
+      "meaning": {
+        "de": "Auf einer aktiven Netzwerkkarte sind DNS-Server fest eingetragen.",
+        "en": "DNS servers are set manually on an active network adapter."
+      },
+      "candidates": [
+        "net.dns_auto"
+      ],
+      "stop": null,
+      "blocks": []
+    },
+    {
+      "code": "PROXY_USER_SET",
+      "severity": 3,
+      "meaning": {
+        "de": "Für den Benutzer ist ein Proxy oder ein Proxy-Skript eingetragen.",
+        "en": "A proxy or proxy script is set for the user."
+      },
+      "candidates": [
+        "net.proxy_user_reset"
+      ],
+      "stop": null,
+      "blocks": []
+    },
+    {
+      "code": "PROXY_WINHTTP_SET",
+      "severity": 3,
+      "meaning": {
+        "de": "Für Windows-Dienste ist ein System-Proxy (WinHTTP) eingetragen.",
+        "en": "A system proxy (WinHTTP) is set for Windows services."
+      },
+      "candidates": [
+        "net.proxy_system_reset"
+      ],
+      "stop": null,
+      "blocks": []
+    },
+    {
+      "code": "HOSTS_MODIFIED",
+      "severity": 3,
+      "meaning": {
+        "de": "Die hosts-Datei enthält aktive Einträge.",
+        "en": "The hosts file contains active entries."
+      },
+      "candidates": [
+        "net.hosts_reset"
+      ],
+      "stop": null,
+      "blocks": []
+    },
+    {
+      "code": "VPN_ADAPTER",
+      "severity": 3,
+      "meaning": {
+        "de": "Ein VPN-Adapter ist vorhanden.",
+        "en": "A VPN adapter is present."
+      },
+      "candidates": [
+        "net.vpn_report"
+      ],
+      "stop": null,
+      "blocks": []
+    },
+    {
+      "code": "SPLIT_DEFAULT_ROUTE",
+      "severity": 3,
+      "meaning": {
+        "de": "Es gibt geteilte Standardrouten (0.0.0.0/1 und 128.0.0.0/1), typisch für VPN.",
+        "en": "There are split default routes (0.0.0.0/1 and 128.0.0.0/1), typical for VPNs."
+      },
+      "candidates": [
+        "net.vpn_report"
+      ],
+      "stop": null,
+      "blocks": []
+    },
+    {
+      "code": "NON_MS_LSP",
+      "severity": 3,
+      "meaning": {
+        "de": "Fremde Winsock-Anbieter sind eingetragen.",
+        "en": "Third-party Winsock providers are installed."
+      },
+      "candidates": [
+        "net.reset_winsock"
+      ],
+      "stop": null,
+      "blocks": []
+    },
+    {
+      "code": "NON_MS_NDIS_FILTER",
+      "severity": 3,
+      "meaning": {
+        "de": "Fremde Netzwerkfilter hängen an den Netzwerkkarten (VPN, Virenschutz, Virtualisierung).",
+        "en": "Third-party network filters are attached to the adapters (VPN, antivirus, virtualization)."
+      },
+      "candidates": [
+        "net.vpn_report",
+        "net.wfp_drop_events"
+      ],
+      "stop": null,
+      "blocks": []
+    },
+    {
+      "code": "FIREWALL_OFF",
+      "severity": 3,
+      "meaning": {
+        "de": "Die Windows-Firewall ist in mindestens einem Profil aus.",
+        "en": "Windows Firewall is off in at least one profile."
+      },
+      "candidates": [
+        "net.firewall_report",
+        "net.firewall_enable"
+      ],
+      "stop": null,
+      "blocks": []
+    },
+    {
+      "code": "FIREWALL_OUTBOUND_BLOCK",
+      "severity": 3,
+      "meaning": {
+        "de": "Die Firewall sperrt ausgehende Verbindungen standardmässig.",
+        "en": "The firewall blocks outgoing connections by default."
+      },
+      "candidates": [
+        "net.firewall_report"
+      ],
+      "stop": null,
+      "blocks": []
+    },
+    {
+      "code": "FIREWALL_SERVICE_STOPPED",
+      "severity": 2,
+      "meaning": {
+        "de": "Der Firewall- oder Filterdienst (mpssvc, BFE) läuft nicht.",
+        "en": "The firewall or filter service (mpssvc, BFE) is not running."
+      },
+      "candidates": [
+        "sys.restart"
+      ],
+      "stop": null,
+      "blocks": []
+    },
+    {
+      "code": "MDE_ONBOARDED",
+      "severity": 4,
+      "meaning": {
+        "de": "Das Gerät ist in Microsoft Defender for Endpoint eingebunden (Firmenschutz).",
+        "en": "The device is onboarded to Microsoft Defender for Endpoint (corporate protection)."
+      },
+      "candidates": [
+        "sec.detect_isolation"
+      ],
+      "stop": null,
+      "blocks": []
+    },
+    {
+      "code": "MDE_ISOLATION_SUSPECT",
+      "severity": 1,
+      "meaning": {
+        "de": "Verdacht: Die Organisation hat das Gerät über Defender for Endpoint vom Netz isoliert.",
+        "en": "Suspicion: the organization isolated the device from the network via Defender for Endpoint."
+      },
+      "candidates": [
+        "sec.detect_isolation"
+      ],
+      "stop": {
+        "de": "Ihr Computer wurde wahrscheinlich von der Organisation, die ihn schützt, absichtlich vom Netz getrennt. Das kann und darf ich nicht aufheben. Bitte melden Sie sich bei deren IT und nennen Sie die Organisations-ID aus dem Bericht.",
+        "en": "Your computer was probably cut off from the network on purpose by the organization that protects it. I cannot and must not undo that. Please contact their IT team and give them the organization ID from the report."
+      },
+      "blocks": [
+        "net.*",
+        "wifi.*"
+      ]
+    },
+    {
+      "code": "WLAN_RADIO_OFF",
+      "severity": 2,
+      "meaning": {
+        "de": "Das WLAN ist ausgeschaltet.",
+        "en": "Wi-Fi is switched off."
+      },
+      "candidates": [
+        "wifi.radio_on"
+      ],
+      "stop": null,
+      "blocks": []
+    },
+    {
+      "code": "WLANSVC_STOPPED",
+      "severity": 2,
+      "meaning": {
+        "de": "Der WLAN-Dienst läuft nicht.",
+        "en": "The Wi-Fi service is not running."
+      },
+      "candidates": [
+        "wifi.restart_service"
+      ],
+      "stop": null,
+      "blocks": []
+    },
+    {
+      "code": "DEFENDER_RTP_OFF",
+      "severity": 2,
+      "meaning": {
+        "de": "Der Echtzeitschutz von Defender ist aus, obwohl Defender zuständig ist.",
+        "en": "Defender real-time protection is off although Defender is in charge."
+      },
+      "candidates": [
+        "defender.report",
+        "defender.realtime_on"
+      ],
+      "stop": null,
+      "blocks": []
+    },
+    {
+      "code": "DEFENDER_SIG_OLD",
+      "severity": 3,
+      "meaning": {
+        "de": "Die Virenliste ist älter als 7 Tage.",
+        "en": "The virus definitions are older than 7 days."
+      },
+      "candidates": [
+        "defender.update_from_ssd"
+      ],
+      "stop": null,
+      "blocks": []
+    },
+    {
+      "code": "DEFENDER_THREATS",
+      "severity": 2,
+      "meaning": {
+        "de": "Defender hat in den letzten 30 Tagen Bedrohungen gemeldet.",
+        "en": "Defender reported threats in the last 30 days."
+      },
+      "candidates": [
+        "defender.report",
+        "defender.quick_scan",
+        "defender.offline_scan"
+      ],
+      "stop": null,
+      "blocks": []
+    },
+    {
+      "code": "NO_ACTIVE_AV",
+      "severity": 2,
+      "meaning": {
+        "de": "Kein aktiver Virenschutz erkennbar.",
+        "en": "No active antivirus protection found."
+      },
+      "candidates": [
+        "defender.report"
+      ],
+      "stop": null,
+      "blocks": []
+    },
+    {
+      "code": "TIME_IMPLAUSIBLE",
+      "severity": 2,
+      "meaning": {
+        "de": "Die Uhrzeit des Computers ist sicher falsch.",
+        "en": "The computer's clock is certainly wrong."
+      },
+      "candidates": [
+        "time.report",
+        "time.set_timezone",
+        "time.set_manual"
+      ],
+      "stop": null,
+      "blocks": []
+    },
+    {
+      "code": "W32TIME_NOSYNC",
+      "severity": 3,
+      "meaning": {
+        "de": "Die automatische Uhrzeit ist ausgeschaltet.",
+        "en": "Automatic time is turned off."
+      },
+      "candidates": [
+        "time.enable_sync"
+      ],
+      "stop": null,
+      "blocks": []
+    },
+    {
+      "code": "WU_SERVICE_DISABLED",
+      "severity": 2,
+      "meaning": {
+        "de": "Ein Dienst von Windows Update ist ausgeschaltet.",
+        "en": "A Windows Update service is disabled."
+      },
+      "candidates": [
+        "wu.service_defaults"
+      ],
+      "stop": null,
+      "blocks": []
+    },
+    {
+      "code": "WU_ERRORS",
+      "severity": 3,
+      "meaning": {
+        "de": "Windows Update meldete in den letzten 30 Tagen Fehler.",
+        "en": "Windows Update reported errors in the last 30 days."
+      },
+      "candidates": [
+        "wu.report",
+        "wu.restart_services",
+        "wu.reset_components"
+      ],
+      "stop": null,
+      "blocks": []
+    },
+    {
+      "code": "SPOOLER_STOPPED",
+      "severity": 2,
+      "meaning": {
+        "de": "Der Druckdienst läuft nicht.",
+        "en": "The print service is not running."
+      },
+      "candidates": [
+        "print.report",
+        "print.restart_spooler"
+      ],
+      "stop": null,
+      "blocks": []
+    },
+    {
+      "code": "PRINTER_OFFLINE",
+      "severity": 2,
+      "meaning": {
+        "de": "Der Standarddrucker steht auf \"Drucker offline verwenden\".",
+        "en": "The default printer is set to \"Use printer offline\"."
+      },
+      "candidates": [
+        "print.set_online"
+      ],
+      "stop": null,
+      "blocks": []
+    },
+    {
+      "code": "PRINT_JOBS_STUCK",
+      "severity": 2,
+      "meaning": {
+        "de": "Druckaufträge hängen.",
+        "en": "Print jobs are stuck."
+      },
+      "candidates": [
+        "print.restart_spooler",
+        "print.clear_queue"
+      ],
+      "stop": null,
+      "blocks": []
+    },
+    {
+      "code": "AUDIO_SERVICE_STOPPED",
+      "severity": 2,
+      "meaning": {
+        "de": "Ein Audiodienst läuft nicht.",
+        "en": "A sound service is not running."
+      },
+      "candidates": [
+        "audio.restart_services"
+      ],
+      "stop": null,
+      "blocks": []
+    },
+    {
+      "code": "AUDIO_NO_ENDPOINT",
+      "severity": 2,
+      "meaning": {
+        "de": "Kein funktionierendes Tongerät gefunden.",
+        "en": "No working sound device found."
+      },
+      "candidates": [
+        "audio.report",
+        "audio.restart_device"
+      ],
+      "stop": null,
+      "blocks": []
+    },
+    {
+      "code": "AUDIO_MUTED",
+      "severity": 2,
+      "meaning": {
+        "de": "Das Standard-Tongerät ist stumm geschaltet.",
+        "en": "The default sound device is muted."
+      },
+      "candidates": [
+        "audio.unmute"
+      ],
+      "stop": null,
+      "blocks": []
+    },
+    {
+      "code": "AUDIO_VOLUME_LOW",
+      "severity": 2,
+      "meaning": {
+        "de": "Die Lautstärke ist unter 5 %.",
+        "en": "The volume is below 5 %."
+      },
+      "candidates": [
+        "audio.unmute"
+      ],
+      "stop": null,
+      "blocks": []
+    },
+    {
+      "code": "DISPLAY_TDR",
+      "severity": 3,
+      "meaning": {
+        "de": "Der Grafiktreiber wurde von Windows neu gestartet (Ereignis 4101).",
+        "en": "Windows restarted the graphics driver (event 4101)."
+      },
+      "candidates": [
+        "display.report"
+      ],
+      "stop": null,
+      "blocks": []
+    },
+    {
+      "code": "DEVICE_ERRORS",
+      "severity": 3,
+      "meaning": {
+        "de": "Geräte melden Fehler (Problemcode im Geräte-Manager).",
+        "en": "Devices report errors (problem code in Device Manager)."
+      },
+      "candidates": [
+        "hw.problem_devices"
+      ],
+      "stop": null,
+      "blocks": []
+    },
+    {
+      "code": "TEMP_PROFILE",
+      "severity": 2,
+      "meaning": {
+        "de": "Hinweis auf ein vorübergehendes Benutzerprofil.",
+        "en": "Signs of a temporary user profile."
+      },
+      "candidates": [
+        "profile.report"
+      ],
+      "stop": null,
+      "blocks": []
+    },
+    {
+      "code": "TEMP_DIR_MISSING",
+      "severity": 2,
+      "meaning": {
+        "de": "Der Ordner für temporäre Dateien fehlt.",
+        "en": "The folder for temporary files is missing."
+      },
+      "candidates": [
+        "profile.fix_temp_folder"
+      ],
+      "stop": null,
+      "blocks": []
+    },
+    {
+      "code": "APPX_BROKEN",
+      "severity": 3,
+      "meaning": {
+        "de": "Store-Apps melden einen Fehlerzustand.",
+        "en": "Store apps report an error state."
+      },
+      "candidates": [
+        "apps.report"
+      ],
+      "stop": null,
+      "blocks": []
+    },
+    {
+      "code": "MANY_AUTOSTARTS",
+      "severity": 3,
+      "meaning": {
+        "de": "Mehr als 15 Programme starten automatisch.",
+        "en": "More than 15 programs start automatically."
+      },
+      "candidates": [
+        "boot.startup_list",
+        "boot.report"
+      ],
+      "stop": null,
+      "blocks": []
+    },
+    {
+      "code": "RESTORE_OFF",
+      "severity": 4,
+      "meaning": {
+        "de": "Der Computerschutz für das Systemlaufwerk ist aus (keine Wiederherstellungspunkte).",
+        "en": "System Protection is off for the system drive (no restore points)."
+      },
+      "candidates": [
+        "sys.enable_restore"
+      ],
+      "stop": null,
+      "blocks": []
+    },
+    {
+      "code": "BITLOCKER_ON",
+      "severity": 4,
+      "meaning": {
+        "de": "Das Systemlaufwerk ist mit BitLocker verschlüsselt.",
+        "en": "The system drive is encrypted with BitLocker."
+      },
+      "candidates": [
+        "bitlocker.recovery_key_hint"
+      ],
+      "stop": null,
+      "blocks": []
+    },
+    {
+      "code": "BITLOCKER_SUSPENDED",
+      "severity": 3,
+      "meaning": {
+        "de": "BitLocker ist angehalten (Schutz aus).",
+        "en": "BitLocker is suspended (protection off)."
+      },
+      "candidates": [
+        "bitlocker.report"
+      ],
+      "stop": null,
+      "blocks": []
+    },
+    {
+      "code": "CRASHES",
+      "severity": 3,
+      "meaning": {
+        "de": "Unerwartete Abschaltungen oder Bluescreens.",
+        "en": "Unexpected shutdowns or blue screens."
+      },
+      "candidates": [
+        "events.crashes"
+      ],
+      "stop": null,
+      "blocks": []
+    },
+    {
+      "code": "WHEA_ERRORS",
+      "severity": 1,
+      "meaning": {
+        "de": "Windows meldet einen schweren Hardwarefehler (WHEA).",
+        "en": "Windows reports a fatal hardware error (WHEA)."
+      },
+      "candidates": [
+        "events.crashes"
+      ],
+      "stop": {
+        "de": "Windows meldet einen schweren Hardwarefehler. Das kann ich nicht reparieren, nur beschreiben. Bitte lass den Computer von einer Fachperson prüfen.",
+        "en": "Windows reports a fatal hardware error. I cannot repair that, only describe it. Please have the computer checked by a technician."
+      },
+      "blocks": [
+        "@reboot",
+        "sysfile.*",
+        "fs.*",
+        "hw.*"
+      ]
+    },
+    {
+      "code": "APP_CRASHES",
+      "severity": 3,
+      "meaning": {
+        "de": "Programme stürzen häufig ab.",
+        "en": "Programs crash often."
+      },
+      "candidates": [
+        "events.crashes",
+        "apps.report"
+      ],
+      "stop": null,
+      "blocks": []
+    }
+  ],
+  "severityScale": {
+    "1": "stop or critical",
+    "2": "broken function, likely cause",
+    "3": "contributing condition",
+    "4": "information"
+  }
+}

@@ -1,0 +1,43 @@
+Plug'n'Heal
+===========
+
+DEUTSCH
+
+So geht es
+  1. Diese SSD am Windows-PC anstecken, der Probleme macht.
+  2. Im Explorer die SSD öffnen und doppelt auf START.cmd klicken.
+  3. Fragt Windows "Möchten Sie zulassen ...", mit "Ja" antworten.
+  4. Den Anweisungen im Fenster folgen. Internet braucht es nicht.
+
+Gut zu wissen
+  - Vor jeder Änderung wird gesichert. Der Bericht zeigt jede Änderung.
+  - Berichte liegen im Ordner PlugNHeal\logs. Diesen Ordner löschen,
+    bevor Sie die SSD jemand anderem geben.
+  - Auf Firmen-PCs mit Sperren und auf Windows im S-Modus startet der
+    Helfer nicht.
+  - Bitte keine Dateien in den Ordnern auf der SSD ändern oder löschen.
+
+ENGLISH
+
+How to use
+  1. Plug this SSD into the Windows PC that has problems.
+  2. Open the SSD in File Explorer and double-click START.cmd.
+  3. If Windows asks "Do you want to allow ...", answer "Yes".
+  4. Follow the instructions in the window. No internet needed.
+
+Good to know
+  - Everything is backed up before a change. The report lists every
+    change.
+  - Reports are kept in the folder PlugNHeal\logs. Delete this folder
+    before you give the SSD to someone else.
+  - Company PCs with restrictions and Windows in S mode cannot run the
+    helper.
+  - Please do not change or delete files in the folders on this SSD.
+
+----------------------------------------------------------------------
+Erstellt / Built:     {{BUILT_AT}}  ({{BUILDER}})
+Laufzeit / Runtime:   Ollama {{OLLAMA_VERSION}}
+Profil / Profile:     {{PROFILE}}
+Modelle / Models:
+{{MODELS}}
+Lizenzen / Licences:  PlugNHeal\licenses

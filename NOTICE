@@ -1,0 +1,13 @@
+Plug'n'Heal
+Copyright 2026 The Plug'n'Heal contributors
+
+This product is licensed under the Apache License, Version 2.0 (see LICENSE).
+
+This repository contains only Plug'n'Heal's own scripts, catalogues and
+documentation. It contains no third-party software and no AI models. The
+builder downloads the Ollama runtime and the language models from their
+original sources onto the drive; see THIRD-PARTY-NOTICES.md.
+
+Plug'n'Heal is not affiliated with or endorsed by Microsoft, Ollama,
+Alibaba Cloud (Qwen), NVIDIA or the ggml / llama.cpp authors. Their names
+are used only to describe what Plug'n'Heal works with.

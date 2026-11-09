@@ -1,0 +1,139 @@
+name: Bug report
+description: Something did not work as expected (building the drive, starting, or a repair).
+title: "[Bug]: "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thank you for reporting. The files from the SSD help most: `summary.txt` and `run.log` in
+        `PlugNHeal\logs\<computer name>-<date and time>\` (for builder problems: `PlugNHeal\logs\build-...\build.log`).
+
+        **Privacy:** these files contain details of the computer: its name, user names in folder paths, printer and
+        Wi-Fi names, network addresses, event messages and the words you typed. Please remove or replace anything
+        personal before you post. Everything in an issue is public.
+
+        **Security problems** (for example a way to make Plug'n'Heal change something without asking) do not belong
+        here. Please report them privately, see [SECURITY.md](https://github.com/MisterDeeds/plug-n-heal/blob/main/SECURITY.md).
+  - type: dropdown
+    id: stage
+    attributes:
+      label: Where did it go wrong?
+      options:
+        - Building the drive on Windows (BUILD.cmd)
+        - Building the drive on Linux or macOS (build-drive.sh)
+        - Starting (START.cmd, the Windows permission question)
+        - Getting ready (after "Start help")
+        - During the repair
+        - Result page or report
+        - Something else
+    validations:
+      required: true
+  - type: dropdown
+    id: windows
+    attributes:
+      label: Windows version of the computer with the problem
+      description: Settings → System → About, "Version". For builder problems on Linux or macOS choose "not Windows".
+      options:
+        - Windows 11 25H2
+        - Windows 11 24H2
+        - Windows 11 23H2 or older
+        - Windows 10 22H2
+        - Windows 10 older
+        - not Windows (builder on Linux or macOS)
+        - I do not know
+    validations:
+      required: true
+  - type: input
+    id: windows_details
+    attributes:
+      label: Windows edition and display language
+      placeholder: "e.g. Windows 11 Home, German"
+  - type: dropdown
+    id: pc_type
+    attributes:
+      label: Type of computer
+      options:
+        - Desktop PC
+        - Laptop
+        - Mini PC
+        - Virtual machine
+        - Other
+    validations:
+      required: true
+  - type: input
+    id: hardware
+    attributes:
+      label: Graphics card and memory
+      description: As far as you know. `run.log` also lists what Plug'n'Heal detected ("Hardware detected").
+      placeholder: "e.g. NVIDIA RTX 3060 12 GB, 16 GB RAM / no graphics card, 8 GB RAM"
+  - type: input
+    id: drive
+    attributes:
+      label: Drive and profile
+      placeholder: "e.g. 128 GB SSD, exFAT, USB 3, profile standard"
+  - type: dropdown
+    id: uac
+    attributes:
+      label: What did you answer when Windows asked for permission?
+      options:
+        - "Yes (repair mode)"
+        - "No (look-only mode)"
+        - Windows did not ask
+        - I do not know / did not get that far
+  - type: dropdown
+    id: category
+    attributes:
+      label: What did you choose in Plug'n'Heal?
+      options:
+        - The internet does not work
+        - The computer is slow
+        - The disk is full
+        - The printer does not print
+        - I hear no sound
+        - Windows updates do not work
+        - Something is wrong with the screen
+        - Something else (own words)
+        - I don't know – please check everything
+        - Did not get that far
+  - type: input
+    id: own_words
+    attributes:
+      label: If you chose "Something else" - what did you type?
+  - type: textarea
+    id: what_happened
+    attributes:
+      label: What happened?
+      description: Step by step. Include the exact text of any message.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What did you expect instead?
+  - type: textarea
+    id: summary
+    attributes:
+      label: summary.txt
+      description: Paste the content of `summary.txt` from the run folder (personal data removed).
+      render: text
+  - type: textarea
+    id: run_log
+    attributes:
+      label: run.log (or build.log)
+      description: Paste the relevant part, or attach the file by dragging it into this box (personal data removed).
+      render: text
+  - type: textarea
+    id: extra
+    attributes:
+      label: Anything else
+      description: Screenshots, antivirus messages, what you tried yourself.
+  - type: checkboxes
+    id: confirm
+    attributes:
+      label: Before you send it
+      options:
+        - label: I removed personal data (names, addresses, Wi-Fi names, anything private) from what I pasted.
+          required: true
+        - label: I looked for an existing issue about the same problem.
+          required: false

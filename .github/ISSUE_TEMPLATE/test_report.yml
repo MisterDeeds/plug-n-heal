@@ -1,0 +1,147 @@
+name: Test report ("I tested it on my PC")
+description: Tell us how Plug'n'Heal behaved on your computer, good or bad. Every report helps.
+title: "[Test]: "
+labels: ["test report"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thank you for testing! Plug'n'Heal has not yet run on many real PCs, so your report is very valuable.
+        The checklist for testers is in [docs/TESTING.md](https://github.com/MisterDeeds/plug-n-heal/blob/main/docs/TESTING.md#4-manual-test-checklist-for-real-pcs).
+
+        **Privacy:** `summary.txt` and `run.log` (on the SSD in `PlugNHeal\logs\<computer name>-<date and time>\`)
+        contain details of the computer: its name, user names in folder paths, printer and Wi-Fi names, network
+        addresses and the words you typed. Please remove or replace anything personal. Everything here is public.
+  - type: dropdown
+    id: result
+    attributes:
+      label: Result
+      options:
+        - It fixed the problem
+        - It did not fix the problem, but nothing got worse
+        - Nothing was wrong, and it said so
+        - It only looked (I answered "No" at the Windows question)
+        - Something got worse
+        - It did not start
+        - The drive could not be built
+    validations:
+      required: true
+  - type: dropdown
+    id: windows
+    attributes:
+      label: Windows version
+      options:
+        - Windows 11 25H2
+        - Windows 11 24H2
+        - Windows 11 23H2 or older
+        - Windows 10 22H2
+        - Windows 10 older
+    validations:
+      required: true
+  - type: input
+    id: edition
+    attributes:
+      label: Windows edition
+      placeholder: "e.g. Home, Pro"
+  - type: dropdown
+    id: language
+    attributes:
+      label: Windows display language
+      options:
+        - German
+        - English
+        - Other
+    validations:
+      required: true
+  - type: dropdown
+    id: pc_type
+    attributes:
+      label: Type of computer
+      options:
+        - Desktop PC
+        - Laptop
+        - Mini PC
+        - Virtual machine
+        - Other
+    validations:
+      required: true
+  - type: input
+    id: hardware
+    attributes:
+      label: Processor, graphics card, memory
+      placeholder: "e.g. Intel Core i5-8250U, Intel UHD 620, 8 GB RAM / Ryzen 7 5800X, RTX 3060 12 GB, 32 GB RAM"
+    validations:
+      required: true
+  - type: input
+    id: drive
+    attributes:
+      label: Drive, file system, USB, profile
+      placeholder: "e.g. 128 GB SSD, exFAT, USB 3, standard"
+  - type: input
+    id: model
+    attributes:
+      label: Model Plug'n'Heal chose and its speed
+      description: In `run.log` look for "Model selected" and "Model fit measured" (TokensPerSecond, OnGpuPercent).
+      placeholder: "e.g. qwen3.5:4b-q4_K_M, CPU, 7.9 tokens/s"
+  - type: input
+    id: times
+    attributes:
+      label: Time until ready / total time of the run
+      placeholder: "e.g. 1 min 40 s / 6 min"
+  - type: checkboxes
+    id: conditions
+    attributes:
+      label: Special conditions on this computer
+      options:
+        - label: Standard user account (Windows asked for an administrator password)
+        - label: Smart App Control is on (Windows 11)
+        - label: Third-party antivirus (please name it below)
+        - label: BitLocker or device encryption is on
+        - label: Company- or school-managed computer
+        - label: Windows Terminal is the default terminal
+  - type: dropdown
+    id: category
+    attributes:
+      label: What did you choose?
+      options:
+        - The internet does not work
+        - The computer is slow
+        - The disk is full
+        - The printer does not print
+        - I hear no sound
+        - Windows updates do not work
+        - Something is wrong with the screen
+        - Something else (own words)
+        - I don't know – please check everything
+        - Did not get that far
+  - type: textarea
+    id: problem
+    attributes:
+      label: What was wrong with the computer?
+      description: A real problem, or a fault you caused on purpose (see the table in docs/TESTING.md)?
+    validations:
+      required: true
+  - type: textarea
+    id: summary
+    attributes:
+      label: summary.txt
+      description: Paste the content of `summary.txt` (personal data removed).
+      render: text
+  - type: textarea
+    id: run_log
+    attributes:
+      label: run.log (optional)
+      description: Paste the relevant part, or attach the file by dragging it into this box (personal data removed).
+      render: text
+  - type: textarea
+    id: notes
+    attributes:
+      label: Your impression
+      description: Was anything confusing, too slow, scary or wrong? Which texts were hard to understand?
+  - type: checkboxes
+    id: confirm
+    attributes:
+      label: Before you send it
+      options:
+        - label: I removed personal data (names, addresses, Wi-Fi names, anything private) from what I pasted.
+          required: true

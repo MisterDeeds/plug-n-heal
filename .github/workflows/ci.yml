@@ -1,0 +1,645 @@
+# Continuous integration for Plug'n'Heal (docs/ARCHITECTURE.md section 7).
+#
+#   lint           PSScriptAnalyzer (tests/PSScriptAnalyzerSettings.psd1, incl. Windows PowerShell 5.1 compatibility),
+#                  JSON, i18n keys, Swiss spelling, CRLF in .cmd, encoding of .ps1
+#   unit           Pester 5 via tests/Invoke-Tests.ps1 on Windows PowerShell 5.1, PowerShell 7 (Windows), PowerShell 7 (Linux)
+#   builder-linux  shellcheck, builder/build-drive.sh with the CI model only, then the official Linux Ollama of the same
+#                  version reads the built models offline (no network namespace route) and lists them
+#   e2e-windows    Build-Drive.ps1 -NonInteractive onto a subst drive, read-only diagnosis, break the print spooler,
+#                  Run-Headless printer -AutoConfirm (must fix it), Run-Headless network -ReadOnly (must change nothing)
+#
+# Only public downloads are used (GitHub releases, registry.ollama.ai, PowerShell Gallery). No secrets.
+
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # The smallest model of src/catalog/models.json (tier 1, runs on the runners' CPUs).
+  PNH_CI_MODEL: qwen3.5:2b-q4_K_M
+  POWERSHELL_TELEMETRY_OPTOUT: '1'
+  POWERSHELL_UPDATECHECK: 'Off'
+
+jobs:
+  # -------------------------------------------------------------------------------------------------------------------
+  lint:
+    name: lint
+    runs-on: windows-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - name: Check out
+        uses: actions/checkout@v7
+        timeout-minutes: 5
+        with:
+          persist-credentials: false
+
+      - name: Install PSScriptAnalyzer
+        timeout-minutes: 5
+        run: |
+          Install-Module -Name PSScriptAnalyzer -RequiredVersion 1.25.0 -Repository PSGallery -Scope CurrentUser -Force -SkipPublisherCheck
+          Get-Module -ListAvailable PSScriptAnalyzer | Select-Object Name, Version, Path | Format-Table -AutoSize | Out-String | Write-Output
+
+      - name: PSScriptAnalyzer
+        timeout-minutes: 10
+        run: |
+          Import-Module PSScriptAnalyzer -RequiredVersion 1.25.0
+          $settings = Join-Path $PWD 'tests/PSScriptAnalyzerSettings.psd1'
+          $found = @(foreach ($dir in 'src', 'builder', 'tests') { Invoke-ScriptAnalyzer -Path $dir -Recurse -Settings $settings })
+          # Strict pass over the shipped app: rules the settings file leaves out only because of builder/test false positives.
+          $found += @(Invoke-ScriptAnalyzer -Path 'src' -Recurse -Severity Error, Warning -IncludeRule 'PSAvoidUsingEmptyCatchBlock', 'PSUseDeclaredVarsMoreThanAssignments', 'PSAvoidGlobalVars')
+          $md = [System.Collections.Generic.List[string]]::new()
+          $md.Add('### PSScriptAnalyzer')
+          $md.Add('')
+          foreach ($d in $found) {
+            $rel = [System.IO.Path]::GetRelativePath($PWD.Path, $d.ScriptPath).Replace('\', '/')
+            $msg = ($d.Message -replace '[\r\n]+', ' ')
+            $level = if ($d.Severity -eq 'Error' -or $d.Severity -eq 'ParseError') { 'error' } else { 'warning' }
+            $props = 'file=' + $rel
+            if ($d.Line) { $props += ',line=' + $d.Line }
+            if ($d.Column) { $props += ',col=' + $d.Column }
+            Write-Output ('::{0} {1},title={2}::{3}' -f $level, $props, $d.RuleName, $msg)
+            $md.Add(('- `{0}:{1}` {2} ({3}): {4}' -f $rel, $d.Line, $d.RuleName, $d.Severity, $msg))
+          }
+          if ($found.Count -eq 0) { $md.Add('No findings (src, builder, tests; Windows PowerShell 5.1 and PowerShell 7 compatibility included).') }
+          Add-Content -LiteralPath $env:GITHUB_STEP_SUMMARY -Value ($md -join "`n") -Encoding utf8NoBOM
+          Write-Output ('{0} finding(s)' -f $found.Count)
+          if ($found.Count -gt 0) { exit 1 }
+
+      - name: Repository checks (JSON, i18n keys, Swiss spelling, CRLF, encoding)
+        timeout-minutes: 5
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $problems = [System.Collections.Generic.List[string]]::new()
+          function Add-Problem([string]$File, [string]$Text, [int]$Line = 0) {
+            $where = if ($Line -gt 0) { ",line=$Line" } else { '' }
+            Write-Output ('::error file={0}{1},title=repository check::{2}' -f $File, $where, $Text)
+            $problems.Add(('`{0}`{1}: {2}' -f $File, $(if ($Line -gt 0) { ":$Line" } else { '' }), $Text))
+          }
+          $strictUtf8 = [System.Text.UTF8Encoding]::new($false, $true)
+          $binary = '\.(png|jpe?g|gif|ico|zip|7z|gz|zst|pdf|exe|dll|woff2?)$'
+          $files = @(git -c core.quotepath=off ls-files | Where-Object { $_ })
+          if ($LASTEXITCODE -ne 0 -or $files.Count -eq 0) { throw 'git ls-files failed' }
+          Write-Output ('{0} tracked files' -f $files.Count)
+
+          foreach ($f in $files) {
+            if ($f -match $binary) { continue }
+            $bytes = [System.IO.File]::ReadAllBytes((Join-Path $PWD $f))
+            $hasBom = $bytes.Length -ge 3 -and $bytes[0] -eq 0xEF -and $bytes[1] -eq 0xBB -and $bytes[2] -eq 0xBF
+            # every text file is valid UTF-8 (catches ANSI/Latin-1 files)
+            try { $text = $strictUtf8.GetString($bytes) } catch { Add-Problem $f 'not valid UTF-8'; continue }
+            if ($hasBom) { $text = $text.Substring(1) }
+
+            # Swiss spelling: no sharp s (U+00DF) and no capital sharp s (U+1E9E) anywhere
+            $lines = $text -split "`n"
+            for ($i = 0; $i -lt $lines.Count; $i++) {
+              if ($lines[$i].IndexOf([char]0x00DF) -ge 0 -or $lines[$i].IndexOf([char]0x1E9E) -ge 0) { Add-Problem $f 'sharp s found; Swiss spelling uses ss' ($i + 1) }
+            }
+
+            # JSON: strict RFC 8259 (System.Text.Json, no comments, no trailing commas), UTF-8 without BOM
+            if ($f -like '*.json') {
+              if ($hasBom) { Add-Problem $f 'JSON file starts with a BOM (must be UTF-8 without BOM)' }
+              try { $doc = [System.Text.Json.JsonDocument]::Parse($text); $doc.Dispose() } catch { Add-Problem $f ('invalid JSON: ' + $_.Exception.Message) }
+            }
+
+            # .cmd/.bat: CRLF only, cmd.exe misreads LF-only files
+            if ($f -match '\.(cmd|bat)$') {
+              $lf = 0; $bad = 0
+              for ($i = 0; $i -lt $bytes.Length; $i++) {
+                if ($bytes[$i] -eq 10) { $lf++; if ($i -eq 0 -or $bytes[$i - 1] -ne 13) { $bad++ } }
+                elseif ($bytes[$i] -eq 13 -and ($i + 1 -ge $bytes.Length -or $bytes[$i + 1] -ne 10)) { $bad++ }
+              }
+              if ($bad -gt 0 -or $lf -eq 0) { Add-Problem $f ("line endings must be CRLF ($bad bad of $lf)") }
+            }
+
+            # PowerShell files: ASCII, or UTF-8 with BOM (Windows PowerShell 5.1 reads BOM-less files as ANSI)
+            if ($f -match '\.(ps1|psm1|psd1)$' -and -not $hasBom) {
+              $nonAscii = [regex]::Matches($text, '[^\x00-\x7F]').Count
+              if ($nonAscii -gt 0) { Add-Problem $f ("$nonAscii non-ASCII character(s) without a UTF-8 BOM") }
+            }
+          }
+
+          # i18n: de.json and en.json have the same keys (nested keys compared as paths)
+          function Get-KeyPath($Node, [string]$Prefix) {
+            if ($Node -is [System.Collections.IDictionary]) {
+              foreach ($k in $Node.Keys) { $p = if ($Prefix) { "$Prefix.$k" } else { [string]$k }; $p; Get-KeyPath $Node[$k] $p }
+            }
+          }
+          $de = @(); $en = @()
+          try {
+            $de = @(Get-KeyPath (Get-Content -Raw -Encoding utf8 'src/i18n/de.json' | ConvertFrom-Json -AsHashtable) '')
+            $en = @(Get-KeyPath (Get-Content -Raw -Encoding utf8 'src/i18n/en.json' | ConvertFrom-Json -AsHashtable) '')
+          } catch { Add-Problem 'src/i18n' ('cannot compare the i18n files: ' + $_.Exception.Message) }
+          foreach ($k in @($de | Where-Object { $en -notcontains $_ })) { Add-Problem 'src/i18n/en.json' "key missing (present in de.json): $k" }
+          foreach ($k in @($en | Where-Object { $de -notcontains $_ })) { Add-Problem 'src/i18n/de.json' "key missing (present in en.json): $k" }
+          Write-Output ('i18n: {0} keys in de.json, {1} in en.json' -f $de.Count, $en.Count)
+
+          $md = @('### Repository checks', '')
+          if ($problems.Count -eq 0) { $md += ('All {0} tracked text files ok: UTF-8, no sharp s, JSON valid, CRLF in .cmd, .ps1 encoding; i18n keys identical ({1}).' -f $files.Count, $de.Count) }
+          else { $md += @($problems | ForEach-Object { '- ' + $_ }) }
+          Add-Content -LiteralPath $env:GITHUB_STEP_SUMMARY -Value ($md -join "`n") -Encoding utf8NoBOM
+          Write-Output ('{0} problem(s)' -f $problems.Count)
+          if ($problems.Count -gt 0) { exit 1 }
+
+  # -------------------------------------------------------------------------------------------------------------------
+  unit:
+    name: unit (${{ matrix.name }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: windows-ps5.1
+            os: windows-latest
+            shell: powershell
+          - name: windows-ps7
+            os: windows-latest
+            shell: pwsh
+          - name: ubuntu-ps7
+            os: ubuntu-latest
+            shell: pwsh
+    defaults:
+      run:
+        shell: ${{ matrix.shell }}
+    steps:
+      - name: Check out
+        uses: actions/checkout@v7
+        timeout-minutes: 5
+        with:
+          persist-credentials: false
+
+      - name: Install Pester 5
+        timeout-minutes: 8
+        run: |
+          $PSVersionTable | Format-Table -AutoSize | Out-String | Write-Output
+          if ($PSVersionTable.PSVersion.Major -lt 6) {
+            # Windows PowerShell 5.1: TLS 1.2 for the PowerShell Gallery, NuGet provider without a prompt
+            [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
+            $nuget = Get-PackageProvider -ListAvailable -Name NuGet -ErrorAction SilentlyContinue | Where-Object { $_.Version -ge [version]'2.8.5.201' }
+            if (-not $nuget) { Install-PackageProvider -Name NuGet -MinimumVersion 2.8.5.201 -Scope CurrentUser -Force | Out-Null }
+          }
+          Install-Module Pester -Force -SkipPublisherCheck -Scope CurrentUser -MinimumVersion 5.5 -MaximumVersion 5.99
+          Get-Module -ListAvailable Pester | Sort-Object Version -Descending | Select-Object -First 3 Name, Version, Path | Format-Table -AutoSize | Out-String | Write-Output
+
+      - name: Pester
+        timeout-minutes: 15
+        run: ./tests/Invoke-Tests.ps1 -Name 'pester-${{ matrix.name }}'
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v7
+        timeout-minutes: 5
+        with:
+          name: test-results-${{ matrix.name }}
+          path: TestResults/
+          if-no-files-found: warn
+          retention-days: 14
+
+  # -------------------------------------------------------------------------------------------------------------------
+  builder-linux:
+    name: builder (Linux) + offline Ollama
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Check out
+        uses: actions/checkout@v7
+        timeout-minutes: 5
+        with:
+          persist-credentials: false
+
+      - name: shellcheck
+        timeout-minutes: 5
+        run: |
+          mapfile -t scripts < <(git ls-files '*.sh')
+          printf 'checking %s\n' "${scripts[@]}"
+          docker run --rm -v "$PWD:/mnt:ro" koalaman/shellcheck:v0.11.0 "${scripts[@]}"
+
+      - name: Prepare work folder, versions and CI catalogue
+        timeout-minutes: 5
+        run: |
+          # Work in the larger of the runner's temp folder and the temporary disk /mnt; the path stays the same for the cache.
+          base="$RUNNER_TEMP/pnh"
+          avail_tmp=$(df -Pk "$RUNNER_TEMP" | awk 'NR == 2 { print $4 }')
+          avail_mnt=0
+          if [[ -d /mnt ]]; then avail_mnt=$(df -Pk /mnt | awk 'NR == 2 { print $4 }'); fi
+          if (( avail_mnt > avail_tmp && avail_tmp < 25 * 1024 * 1024 )); then
+            sudo mkdir -p /mnt/pnh
+            sudo chown "$(id -u):$(id -g)" /mnt/pnh
+            ln -sfn /mnt/pnh "$base"
+          fi
+          mkdir -p "$base"/cache/runtime "$base"/cache/blobs "$base"/cache/ollama-linux "$base"/drive "$base"/evidence "$base"/ollama-home
+          df -h "$RUNNER_TEMP" /mnt "$base/" || true
+          echo "PNH_BASE=$base" >> "$GITHUB_ENV"
+
+          # Versions of the pinned Windows runtime (the Linux Ollama below uses the same version)
+          python3 -I - builder/versions.json >> "$GITHUB_ENV" <<'PY'
+          import json, sys
+          o = json.load(open(sys.argv[1], encoding="utf-8"))["ollama"]
+          for k, v in (("OLLAMA_VERSION", o["version"]), ("OLLAMA_ASSET", o["asset"]), ("OLLAMA_URL", o["url"]), ("OLLAMA_SHA256", o["sha256"].lower())):
+              print("%s=%s" % (k, v))
+          PY
+
+          # CI catalogue: profile "small" holds only the CI model (build-drive.sh --catalog)
+          python3 -I - src/catalog/models.json "$base/ci-models.json" "$PNH_CI_MODEL" <<'PY'
+          import json, sys
+          src, dst, tag = sys.argv[1:4]
+          c = json.load(open(src, encoding="utf-8"))
+          m = [x for x in c["models"] if x["tag"] == tag]
+          if not m:
+              sys.exit("CI model %s is not in %s" % (tag, src))
+          c["profiles"]["small"] = {"description": "CI: one small model", "models": [tag], "bytes": m[0]["bytes"]}
+          json.dump(c, open(dst, "w", encoding="utf-8"), indent=2)
+          print("CI catalogue: profile small = %s (%.2f GB)" % (tag, m[0]["bytes"] / 1e9))
+          PY
+
+      - name: Restore cache (Windows runtime ZIP)
+        id: cache-runtime
+        uses: actions/cache/restore@v6
+        timeout-minutes: 10
+        with:
+          path: ${{ runner.temp }}/pnh/cache/runtime
+          key: ollama-windows-zip-${{ runner.os }}-${{ hashFiles('builder/versions.json') }}
+
+      - name: Restore cache (model blobs)
+        id: cache-blobs
+        uses: actions/cache/restore@v6
+        timeout-minutes: 10
+        with:
+          path: ${{ runner.temp }}/pnh/cache/blobs
+          key: model-blobs-${{ runner.os }}-${{ env.PNH_CI_MODEL }}-${{ hashFiles('src/catalog/models.json') }}
+          restore-keys: |
+            model-blobs-${{ runner.os }}-${{ env.PNH_CI_MODEL }}-
+
+      - name: Download the Windows runtime ZIP (cache miss only)
+        if: steps.cache-runtime.outputs.cache-hit != 'true'
+        timeout-minutes: 15
+        run: |
+          zip="$PNH_BASE/cache/runtime/$OLLAMA_ASSET"
+          curl -L --fail --retry 5 --retry-delay 10 --retry-all-errors -sS -o "$zip.part" "$OLLAMA_URL"
+          echo "$OLLAMA_SHA256  $zip.part" | sha256sum -c -
+          mv -f "$zip.part" "$zip"
+
+      - name: Save cache (Windows runtime ZIP)
+        if: steps.cache-runtime.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v6
+        timeout-minutes: 10
+        with:
+          path: ${{ runner.temp }}/pnh/cache/runtime
+          key: ${{ steps.cache-runtime.outputs.cache-primary-key }}
+
+      - name: Seed the target with the cached files
+        timeout-minutes: 5
+        run: |
+          # Hard links: build-drive.sh deletes the ZIP after extracting it, the cache copy stays.
+          pnh="$PNH_BASE/drive/PlugNHeal"
+          mkdir -p "$pnh/downloads" "$pnh/models/blobs"
+          ln -f "$PNH_BASE/cache/runtime/$OLLAMA_ASSET" "$pnh/downloads/$OLLAMA_ASSET"
+          n=0
+          for b in "$PNH_BASE"/cache/blobs/sha256-*; do
+            [[ -f $b ]] || continue
+            ln -f "$b" "$pnh/models/blobs/"
+            n=$((n + 1))
+          done
+          echo "seeded the runtime ZIP and $n cached blob(s)"
+
+      - name: Build the drive with build-drive.sh (profile small = CI model)
+        timeout-minutes: 25
+        run: |
+          # --verify re-hashes blobs that came from the cache; the runtime ZIP is always sha256-checked.
+          bash builder/build-drive.sh "$PNH_BASE/drive" small --catalog "$PNH_BASE/ci-models.json" --verify 2>&1 | tee "$PNH_BASE/evidence/build-drive.log"
+
+      - name: Check the built drive
+        timeout-minutes: 5
+        run: |
+          python3 -I - "$PNH_BASE/drive" "$PNH_CI_MODEL" "$OLLAMA_VERSION" <<'PY'
+          import json, os, sys
+          root, tag, version = sys.argv[1:4]
+          pnh = os.path.join(root, "PlugNHeal")
+          errors = []
+          for rel in ("START.cmd", "README.txt", "PlugNHeal/app/START.cmd", "PlugNHeal/app/Run-Headless.ps1",
+                      "PlugNHeal/app/lib/Common.ps1", "PlugNHeal/app/catalog/models.json",
+                      "PlugNHeal/runtime/ollama/ollama.exe", "PlugNHeal/runtime/runtime.json", "PlugNHeal/drive.json",
+                      "PlugNHeal/licenses/ollama-LICENSE.txt"):
+              if not os.path.isfile(os.path.join(root, rel)):
+                  errors.append("missing " + rel)
+          if os.path.exists(os.path.join(pnh, "downloads", os.environ["OLLAMA_ASSET"])):
+              errors.append("the runtime ZIP was not removed after extracting it")
+          drive = json.load(open(os.path.join(pnh, "drive.json"), encoding="utf-8"))
+          if drive.get("ollama") != version:
+              errors.append("drive.json ollama %r, expected %r" % (drive.get("ollama"), version))
+          if tag not in [m.get("tag") for m in drive.get("models", [])]:
+              errors.append("drive.json does not list %s: %r" % (tag, drive.get("models")))
+          name, t = tag.rsplit(":", 1)
+          manifest = os.path.join(pnh, "models", "manifests", "registry.ollama.ai", "library", name, t)
+          if not os.path.isfile(manifest):
+              errors.append("manifest missing: " + manifest)
+          else:
+              m = json.load(open(manifest, encoding="utf-8"))
+              for e in [m["config"]] + m["layers"]:
+                  blob = os.path.join(pnh, "models", "blobs", e["digest"].replace(":", "-"))
+                  if not os.path.isfile(blob) or os.path.getsize(blob) != e["size"]:
+                      errors.append("blob missing or wrong size: " + e["digest"])
+          readme = open(os.path.join(root, "README.txt"), "rb").read()
+          if not readme.startswith(b"\xef\xbb\xbf") or b"\n" in readme.replace(b"\r\n", b""):
+              errors.append("README.txt must be UTF-8 with BOM and CRLF")
+          start = open(os.path.join(root, "START.cmd"), "rb").read()
+          if b"\n" in start.replace(b"\r\n", b""):
+              errors.append("START.cmd lost its CRLF line endings")
+          print(json.dumps(drive, indent=2))
+          for e in errors:
+              print("::error title=built drive::" + e)
+          sys.exit(1 if errors else 0)
+          PY
+
+      - name: Collect model blobs for the cache (cache miss only)
+        if: steps.cache-blobs.outputs.cache-hit != 'true'
+        timeout-minutes: 5
+        run: |
+          for b in "$PNH_BASE"/drive/PlugNHeal/models/blobs/sha256-*; do
+            dst="$PNH_BASE/cache/blobs/$(basename "$b")"
+            [[ -e $dst ]] || ln "$b" "$dst"
+          done
+          ls -l "$PNH_BASE/cache/blobs"
+
+      - name: Save cache (model blobs)
+        if: steps.cache-blobs.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v6
+        timeout-minutes: 10
+        with:
+          path: ${{ runner.temp }}/pnh/cache/blobs
+          key: ${{ steps.cache-blobs.outputs.cache-primary-key }}
+
+      - name: Restore cache (Linux Ollama)
+        id: cache-ollama-linux
+        uses: actions/cache/restore@v6
+        timeout-minutes: 10
+        with:
+          path: ${{ runner.temp }}/pnh/cache/ollama-linux
+          key: ollama-linux-amd64-${{ hashFiles('builder/versions.json') }}
+
+      - name: Download the official Linux Ollama of the same version (cache miss only)
+        if: steps.cache-ollama-linux.outputs.cache-hit != 'true'
+        timeout-minutes: 15
+        run: |
+          d="$PNH_BASE/cache/ollama-linux"
+          rel="https://github.com/ollama/ollama/releases/download/v$OLLAMA_VERSION"
+          curl -L --fail --retry 5 --retry-delay 10 --retry-all-errors -sS -o "$d/sha256sum.txt" "$rel/sha256sum.txt"
+          curl -L --fail --retry 5 --retry-delay 10 --retry-all-errors -sS -o "$d/ollama-linux-amd64.tar.zst" "$rel/ollama-linux-amd64.tar.zst"
+
+      - name: Save cache (Linux Ollama)
+        if: steps.cache-ollama-linux.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v6
+        timeout-minutes: 10
+        with:
+          path: ${{ runner.temp }}/pnh/cache/ollama-linux
+          key: ${{ steps.cache-ollama-linux.outputs.cache-primary-key }}
+
+      - name: Verify and unpack the Linux Ollama (CPU parts only)
+        timeout-minutes: 10
+        run: |
+          d="$PNH_BASE/cache/ollama-linux"
+          want=$(awk '$2 ~ /(^|\/)ollama-linux-amd64\.tar\.zst$/ { print $1 }' "$d/sha256sum.txt")
+          [[ $want =~ ^[0-9a-f]{64}$ ]] || { echo "::error::no sha256 for ollama-linux-amd64.tar.zst in sha256sum.txt"; exit 1; }
+          echo "$want  $d/ollama-linux-amd64.tar.zst" | sha256sum -c -
+          mkdir -p "$PNH_BASE/ollama-linux"
+          tar --zstd -xf "$d/ollama-linux-amd64.tar.zst" -C "$PNH_BASE/ollama-linux" \
+            --exclude='lib/ollama/cuda_*' --exclude='lib/ollama/rocm*' --exclude='lib/ollama/vulkan*' --exclude='lib/ollama/mlx*'
+          "$PNH_BASE/ollama-linux/bin/ollama" --version || true
+          du -sh "$PNH_BASE/ollama-linux"
+
+      - name: Ollama offline reads the built models (ollama list, show, a tiny generation)
+        timeout-minutes: 15
+        run: |
+          cat > "$PNH_BASE/offline-check.sh" <<'SH'
+          #!/usr/bin/env bash
+          # Runs inside "unshare --net": a new network namespace without any route out.
+          set -euo pipefail
+          models=$1 home=$2 exe=$3 out=$4 tag=$5
+          ip link set lo up
+          if curl -sS -m 10 -o /dev/null https://registry.ollama.ai/v2/ 2>/dev/null; then
+            echo "::error::the registry is reachable, this would not be an offline test"; exit 1
+          fi
+          echo "offline: registry.ollama.ai is not reachable from this namespace"
+          export OLLAMA_MODELS=$models OLLAMA_HOST=127.0.0.1:11434 OLLAMA_NOPRUNE=1 OLLAMA_NO_CLOUD=1 HOME=$home
+          "$exe" serve >"$out/ollama-serve.log" 2>&1 &
+          pid=$!
+          cleanup() {
+            local rc=$?
+            kill "$pid" 2>/dev/null || true
+            wait "$pid" 2>/dev/null || true
+            if (( rc != 0 )); then echo "--- last lines of ollama-serve.log"; tail -n 60 "$out/ollama-serve.log" || true; fi
+          }
+          trap cleanup EXIT
+          for _ in $(seq 1 60); do
+            if curl -fsS -m 2 http://127.0.0.1:11434/api/version 2>/dev/null; then echo; break; fi
+            sleep 1
+          done
+          "$exe" list | tee "$out/ollama-list.txt"
+          grep -F -- "$tag" "$out/ollama-list.txt" >/dev/null || { echo "::error::ollama list does not show $tag"; exit 1; }
+          "$exe" show "$tag" | tee "$out/ollama-show.txt"
+          body=$(printf '{"model":"%s","prompt":"Reply with the word OK.","stream":false,"think":false,"options":{"num_predict":8,"num_ctx":2048}}' "$tag")
+          curl -fsS -m 600 http://127.0.0.1:11434/api/generate -d "$body" | tee "$out/ollama-generate.json"
+          echo
+          python3 -I -c 'import json, sys; d = json.load(open(sys.argv[1])); assert d.get("done") is True, d; print("generation ok:", repr(d.get("response")))' "$out/ollama-generate.json"
+          SH
+          sudo unshare --net -- bash "$PNH_BASE/offline-check.sh" "$PNH_BASE/drive/PlugNHeal/models" "$PNH_BASE/ollama-home" \
+            "$PNH_BASE/ollama-linux/bin/ollama" "$PNH_BASE/evidence" "$PNH_CI_MODEL"
+
+      - name: Upload evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        timeout-minutes: 5
+        with:
+          name: builder-linux-evidence
+          path: ${{ runner.temp }}/pnh/evidence/
+          if-no-files-found: warn
+          retention-days: 14
+
+  # -------------------------------------------------------------------------------------------------------------------
+  e2e-windows:
+    name: e2e (Windows PowerShell 5.1)
+    runs-on: windows-latest
+    timeout-minutes: 45
+    defaults:
+      run:
+        shell: powershell
+    steps:
+      - name: Check out
+        uses: actions/checkout@v7
+        timeout-minutes: 5
+        with:
+          persist-credentials: false
+
+      - name: Prepare work folder, drive P:, versions and CI catalogue
+        timeout-minutes: 5
+        run: |
+          $PSVersionTable | Format-Table -AutoSize | Out-String | Write-Output
+          $base = Join-Path $env:RUNNER_TEMP 'pnh'
+          foreach ($d in 'cache\runtime', 'cache\blobs', 'drive', 'evidence') { New-Item -ItemType Directory -Path (Join-Path $base $d) -Force | Out-Null }
+          # A drive letter like a real SSD; the builder and the app derive every path from it.
+          subst.exe P: (Join-Path $base 'drive')
+          if ($LASTEXITCODE -ne 0 -or -not (Test-Path -LiteralPath 'P:\')) { throw 'subst P: failed' }
+          $utf8 = New-Object System.Text.UTF8Encoding($false)   # Out-File -Encoding utf8 would write a BOM in 5.1
+          $v = ConvertFrom-Json -InputObject ([System.IO.File]::ReadAllText((Join-Path $PWD 'builder\versions.json'), [System.Text.Encoding]::UTF8))
+          $lines = @(
+            "PNH_BASE=$base"
+            "OLLAMA_VERSION=$($v.ollama.version)"
+            "OLLAMA_ASSET=$($v.ollama.asset)"
+            "OLLAMA_URL=$($v.ollama.url)"
+            "OLLAMA_SHA256=$(([string]$v.ollama.sha256).ToLowerInvariant())"
+          )
+          [System.IO.File]::AppendAllText($env:GITHUB_ENV, (($lines -join "`n") + "`n"), $utf8)
+          # CI catalogue: profile "small" holds only the CI model (Build-Drive.ps1 -Catalog)
+          $cat = ConvertFrom-Json -InputObject ([System.IO.File]::ReadAllText((Join-Path $PWD 'src\catalog\models.json'), [System.Text.Encoding]::UTF8))
+          if (@($cat.models | Where-Object { $_.tag -eq $env:PNH_CI_MODEL }).Count -ne 1) { throw "$env:PNH_CI_MODEL is not in src\catalog\models.json" }
+          $cat.profiles.small.models = @($env:PNH_CI_MODEL)
+          [System.IO.File]::WriteAllText((Join-Path $base 'ci-models.json'), (ConvertTo-Json -InputObject $cat -Depth 20), $utf8)
+          Get-PSDrive -PSProvider FileSystem | Format-Table Name, Root, @{ n = 'FreeGB'; e = { [math]::Round($_.Free / 1GB, 1) } } -AutoSize | Out-String | Write-Output
+
+      - name: Restore cache (Windows runtime ZIP)
+        id: cache-runtime
+        uses: actions/cache/restore@v6
+        timeout-minutes: 10
+        with:
+          path: ${{ runner.temp }}\pnh\cache\runtime
+          key: ollama-windows-zip-${{ runner.os }}-${{ hashFiles('builder/versions.json') }}
+
+      - name: Restore cache (model blobs)
+        id: cache-blobs
+        uses: actions/cache/restore@v6
+        timeout-minutes: 10
+        with:
+          path: ${{ runner.temp }}\pnh\cache\blobs
+          key: model-blobs-${{ runner.os }}-${{ env.PNH_CI_MODEL }}-${{ hashFiles('src/catalog/models.json') }}
+          restore-keys: |
+            model-blobs-${{ runner.os }}-${{ env.PNH_CI_MODEL }}-
+
+      - name: Download the runtime ZIP (cache miss only)
+        if: steps.cache-runtime.outputs.cache-hit != 'true'
+        timeout-minutes: 15
+        run: |
+          $zip = Join-Path $env:PNH_BASE ('cache\runtime\' + $env:OLLAMA_ASSET)
+          # curl.exe, not "curl": in Windows PowerShell 5.1 that is an alias of Invoke-WebRequest
+          & curl.exe -L --fail --retry 5 --retry-delay 10 --retry-all-errors -sS -o "$zip.part" $env:OLLAMA_URL
+          if ($LASTEXITCODE -ne 0) { throw "curl exit code $LASTEXITCODE" }
+          $hash = (Get-FileHash -LiteralPath "$zip.part" -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($hash -ne $env:OLLAMA_SHA256) { throw "sha256 mismatch: $hash" }
+          Move-Item -LiteralPath "$zip.part" -Destination $zip -Force
+
+      - name: Save cache (Windows runtime ZIP)
+        if: steps.cache-runtime.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v6
+        timeout-minutes: 10
+        with:
+          path: ${{ runner.temp }}\pnh\cache\runtime
+          key: ${{ steps.cache-runtime.outputs.cache-primary-key }}
+
+      - name: Seed the drive with the cached files
+        timeout-minutes: 5
+        run: |
+          # Hard links: the builder deletes the ZIP after extracting it, the cache copy stays. Only blobs are seeded,
+          # no manifests, so the builder still starts ollama.exe and runs /api/pull (which finds the blobs).
+          $pnh = Join-Path $env:PNH_BASE 'drive\PlugNHeal'
+          $dl = Join-Path $pnh 'downloads'
+          $blobs = Join-Path $pnh 'models\blobs'
+          New-Item -ItemType Directory -Path $dl, $blobs -Force | Out-Null
+          New-Item -ItemType HardLink -Path (Join-Path $dl $env:OLLAMA_ASSET) -Value (Join-Path $env:PNH_BASE ('cache\runtime\' + $env:OLLAMA_ASSET)) | Out-Null
+          $n = 0
+          foreach ($b in @(Get-ChildItem -LiteralPath (Join-Path $env:PNH_BASE 'cache\blobs') -Filter 'sha256-*' -File)) {
+            New-Item -ItemType HardLink -Path (Join-Path $blobs $b.Name) -Value $b.FullName | Out-Null
+            $n++
+          }
+          Write-Output "seeded the runtime ZIP and $n cached blob(s)"
+
+      - name: Build the drive (Build-Drive.ps1 -NonInteractive, Windows PowerShell 5.1)
+        id: build
+        timeout-minutes: 20
+        run: |
+          if (-not (Test-Path -LiteralPath 'P:\')) { subst.exe P: (Join-Path $env:PNH_BASE 'drive') }
+          $ps = Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'
+          & $ps -NoLogo -NoProfile -ExecutionPolicy Bypass -STA -File builder\Build-Drive.ps1 -NonInteractive -Drive P: -Profile small -Catalog (Join-Path $env:PNH_BASE 'ci-models.json') -Language en
+          if ($LASTEXITCODE -ne 0) { throw "Build-Drive.ps1 exit code $LASTEXITCODE" }
+          $drive = ConvertFrom-Json -InputObject ([System.IO.File]::ReadAllText('P:\PlugNHeal\drive.json', [System.Text.Encoding]::UTF8))
+          $drive | ConvertTo-Json -Depth 5 | Write-Output
+          if (@($drive.models | Where-Object { $_.tag -eq $env:PNH_CI_MODEL }).Count -ne 1) { throw "drive.json does not list $env:PNH_CI_MODEL" }
+          foreach ($p in 'P:\START.cmd', 'P:\README.txt', 'P:\PlugNHeal\app\Run-Headless.ps1', 'P:\PlugNHeal\runtime\ollama\ollama.exe', 'P:\PlugNHeal\runtime\runtime.json') {
+            if (-not (Test-Path -LiteralPath $p -PathType Leaf)) { throw "missing $p" }
+          }
+          if (Test-Path -LiteralPath 'P:\PlugNHeal\downloads') { throw 'the downloads folder (runtime ZIP) was not cleaned up' }
+
+      - name: Collect model blobs for the cache (cache miss only)
+        if: steps.cache-blobs.outputs.cache-hit != 'true'
+        timeout-minutes: 5
+        run: |
+          $cache = Join-Path $env:PNH_BASE 'cache\blobs'
+          foreach ($b in @(Get-ChildItem -LiteralPath (Join-Path $env:PNH_BASE 'drive\PlugNHeal\models\blobs') -Filter 'sha256-*' -File)) {
+            $dst = Join-Path $cache $b.Name
+            if (-not (Test-Path -LiteralPath $dst)) { New-Item -ItemType HardLink -Path $dst -Value $b.FullName | Out-Null }
+          }
+          Get-ChildItem -LiteralPath $cache | Format-Table Name, Length -AutoSize | Out-String | Write-Output
+
+      - name: Save cache (model blobs)
+        if: steps.cache-blobs.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v6
+        timeout-minutes: 10
+        with:
+          path: ${{ runner.temp }}\pnh\cache\blobs
+          key: ${{ steps.cache-blobs.outputs.cache-primary-key }}
+
+      - name: Read-only diagnosis (Invoke-PnhDiagnose under 60 s, returns flags)
+        if: ${{ !cancelled() && steps.build.outcome == 'success' }}
+        timeout-minutes: 5
+        run: |
+          if (-not (Test-Path -LiteralPath 'P:\')) { subst.exe P: (Join-Path $env:PNH_BASE 'drive') }
+          & .\tests\e2e\Assert-Run.ps1 -Scenario diagnose -AppPath 'P:\PlugNHeal\app' -OutDir (Join-Path $env:PNH_BASE 'evidence') -MaxDiagnoseSeconds 60
+
+      - name: Break the printer (stop the Print Spooler)
+        id: break
+        if: ${{ !cancelled() && steps.build.outcome == 'success' }}
+        timeout-minutes: 5
+        run: |
+          if (-not (Test-Path -LiteralPath 'P:\')) { subst.exe P: (Join-Path $env:PNH_BASE 'drive') }
+          & .\tests\e2e\Break-Printer.ps1 -AppPath 'P:\PlugNHeal\app' -StateFile (Join-Path $env:PNH_BASE 'evidence\spooler-before.json')
+
+      - name: Headless run, category printer, -AutoConfirm (must fix the spooler)
+        if: ${{ !cancelled() && steps.break.outcome == 'success' }}
+        timeout-minutes: 17
+        run: |
+          if (-not (Test-Path -LiteralPath 'P:\')) { subst.exe P: (Join-Path $env:PNH_BASE 'drive') }
+          & .\tests\e2e\Assert-Run.ps1 -Scenario printer -AppPath 'P:\PlugNHeal\app' -Model $env:PNH_CI_MODEL -OutDir (Join-Path $env:PNH_BASE 'evidence') -TimeoutMinutes 15
+
+      - name: Headless run, category network, -ReadOnly (must change nothing)
+        if: ${{ !cancelled() && steps.build.outcome == 'success' }}
+        timeout-minutes: 14
+        run: |
+          if (-not (Test-Path -LiteralPath 'P:\')) { subst.exe P: (Join-Path $env:PNH_BASE 'drive') }
+          & .\tests\e2e\Assert-Run.ps1 -Scenario network-readonly -AppPath 'P:\PlugNHeal\app' -Model $env:PNH_CI_MODEL -OutDir (Join-Path $env:PNH_BASE 'evidence') -TimeoutMinutes 12
+
+      - name: Upload logs (run folders, build log, evidence)
+        if: always()
+        uses: actions/upload-artifact@v7
+        timeout-minutes: 5
+        with:
+          name: e2e-windows-logs
+          path: |
+            ${{ runner.temp }}\pnh\evidence
+            ${{ runner.temp }}\pnh\drive\PlugNHeal\logs
+          if-no-files-found: warn
+          retention-days: 14

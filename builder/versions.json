@@ -1,0 +1,24 @@
+{
+  "schema": 1,
+  "builder": {
+    "name": "plug-n-heal",
+    "version": "0.1.0"
+  },
+  "ollama": {
+    "version": "0.40.15",
+    "asset": "ollama-windows-amd64.zip",
+    "url": "https://github.com/ollama/ollama/releases/download/v0.40.15/ollama-windows-amd64.zip",
+    "size": 1614941966,
+    "sha256": "9ca74a7ab66ec86870b1eecac7df160df08dc4e3a291ab5d2d59bcf9310221c6",
+    "extractedBytes": 2263717391,
+    "licenseUrl": "https://raw.githubusercontent.com/ollama/ollama/v0.40.15/LICENSE",
+    "measured": "2026-11-09: size from Content-Length of the release download, sha256 from the release's sha256sum.txt and from the asset digest GitHub shows on the release page (expanded_assets); both agree. extractedBytes = sum of the 75 files in the ZIP, measured after extraction."
+  },
+  "registry": {
+    "url": "https://registry.ollama.ai",
+    "host": "registry.ollama.ai",
+    "manifestAccept": "application/vnd.docker.distribution.manifest.v2+json"
+  },
+  "reserveBytes": 536870912,
+  "sizeTolerancePercent": 1
+}

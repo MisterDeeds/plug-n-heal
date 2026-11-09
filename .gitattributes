@@ -1,0 +1,12 @@
+# Windows batch files must keep CRLF, cmd.exe misreads LF-only files.
+*.cmd   text eol=crlf
+*.bat   text eol=crlf
+# PowerShell 5.1 reads BOM-less files as ANSI; keep files byte-exact.
+*.ps1   text eol=crlf
+*.psm1  text eol=crlf
+*.psd1  text eol=crlf
+*.sh    text eol=lf
+*.json  text eol=lf
+*.md    text eol=lf
+*.png   binary
+*.jpg   binary

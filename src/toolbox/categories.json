@@ -1,0 +1,77 @@
+{
+  "schema": 1,
+  "categories": [
+    {
+      "id": "network",
+      "icon": "🌐",
+      "titleKey": "cat.network",
+      "diagnose": ["system", "network", "security"],
+      "success": "check.network",
+      "actions": ["net.*", "wifi.*", "sec.detect_isolation", "time.report", "time.enable_sync", "time.set_timezone", "time.set_manual", "sys.restart"]
+    },
+    {
+      "id": "slow",
+      "icon": "🐢",
+      "titleKey": "cat.slow",
+      "diagnose": ["system", "performance", "disk", "security", "events"],
+      "success": "check.slow",
+      "actions": ["boot.*", "sys.restart", "disk.report", "disk.clean_user_temp", "disk.clean_windows_temp", "events.*", "defender.report", "defender.quick_scan", "fs.health"]
+    },
+    {
+      "id": "disk",
+      "icon": "💾",
+      "titleKey": "cat.disk",
+      "diagnose": ["system", "disk", "events"],
+      "success": "check.disk",
+      "actions": ["disk.*", "fs.*"]
+    },
+    {
+      "id": "printer",
+      "icon": "🖨️",
+      "titleKey": "cat.printer",
+      "diagnose": ["system", "printer"],
+      "success": "check.printer",
+      "actions": ["print.*", "sys.restart"]
+    },
+    {
+      "id": "sound",
+      "icon": "🔊",
+      "titleKey": "cat.sound",
+      "diagnose": ["system", "audio"],
+      "success": "check.sound",
+      "actions": ["audio.*", "hw.problem_devices", "sys.restart"]
+    },
+    {
+      "id": "update",
+      "icon": "🔄",
+      "titleKey": "cat.update",
+      "diagnose": ["system", "update", "disk", "network"],
+      "success": "check.update",
+      "actions": ["wu.*", "sys.restart", "time.report", "time.enable_sync", "disk.report", "disk.clean_delivery_optimization", "sysfile.*"]
+    },
+    {
+      "id": "display",
+      "icon": "🖥️",
+      "titleKey": "cat.display",
+      "diagnose": ["system", "display", "events"],
+      "success": "check.display",
+      "actions": ["display.*", "hw.*", "sys.restart"]
+    },
+    {
+      "id": "other",
+      "icon": "❓",
+      "titleKey": "cat.other",
+      "diagnose": ["system", "performance", "security", "events"],
+      "success": "check.other",
+      "actions": ["sys.*", "shell.*", "apps.*", "profile.*", "hw.*", "time.*", "defender.*", "sysfile.*", "bitlocker.*", "events.*"]
+    },
+    {
+      "id": "all",
+      "icon": "🩺",
+      "titleKey": "cat.all",
+      "diagnose": ["system", "network", "security", "disk", "performance", "printer", "audio", "update", "display", "events"],
+      "success": "check.all",
+      "actions": ["*"]
+    }
+  ]
+}

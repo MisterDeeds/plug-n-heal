@@ -1,0 +1,22 @@
+# Created when Plug'n'Heal runs straight from the repository (developer mode) – never commit.
+/runtime/
+/models/
+/home/
+/logs/
+/licenses/
+/drive.json
+/PlugNHeal/
+
+# Test and tool output
+/TestResults/
+*.TestResults.xml
+coverage*.xml
+/.pester/
+
+# Editors and OS
+.vscode/
+.idea/
+*.swp
+Thumbs.db
+.DS_Store
+desktop.ini

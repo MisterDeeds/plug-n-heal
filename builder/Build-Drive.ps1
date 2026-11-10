@@ -1205,7 +1205,7 @@ function New-PnhHfManifest {
         $role = [string](Get-PnhValue $b 'role')
         $sha = [string](Get-PnhValue $b 'sha256')
         $size = Get-PnhValue $b 'size'
-        if (-not $sha -or $size -eq $null) { throw (New-PnhBuildError -Code 'hfPin' -Message (Get-PnhBuildText 'err.hfPin' @($role, 'sha256/size missing'))) }
+        if (-not $sha -or $null -eq $size) { throw (New-PnhBuildError -Code 'hfPin' -Message (Get-PnhBuildText 'err.hfPin' @($role, 'sha256/size missing'))) }
         if ($role -eq 'config') {
             $config = @{ mediaType = 'application/vnd.docker.container.image.v1+json'; digest = ('sha256:' + $sha); size = [int64]$size }
         } else {

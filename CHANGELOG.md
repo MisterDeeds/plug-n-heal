@@ -11,6 +11,10 @@ First public version. Not yet tried on real home PCs; see the status note in the
 
 ### Added
 
+- **One command for everything:** `install.ps1` (`irm ... | iex`) now also sets up the network rescue kit
+  (`sync-drive.ps1`) on the same SSD after the app. New settings `PNH_KIT` (`yes`/`no`) and `PNH_KIT_MODEL`;
+  the PowerShell window stays open at the end (no `exit` when run with `iex`); script paths are quoted for user
+  names with spaces.
 - **Start:** `START.cmd` in the root of the drive starts Windows PowerShell 5.1 with `-ExecutionPolicy Bypass`.
   `Start.ps1` stops with a plain message when Windows reports S mode or PowerShell runs in Constrained Language Mode
   (company PCs, App Control), asks once for administrator rights (UAC) and opens the window without a console. Refusing the UAC

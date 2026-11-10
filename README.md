@@ -22,6 +22,16 @@ English | [Deutsch](README.de.md)
 >
 > The same command updates the drive later. Details and risks: [network rescue kit](#network-rescue-kit-one-command).
 
+> [!TIP]
+> **Everything on one SSD with one command:** the Plug'n'Heal app with all seven AI models **and** the network rescue
+> kit. Plug in an SSD (exFAT or NTFS, 128 GB or more for everything), open PowerShell and paste:
+> ```powershell
+> irm https://raw.githubusercontent.com/MisterDeeds/plug-n-heal/main/install.ps1 | iex
+> ```
+> It asks for the drive letter and then runs until everything is there (about 103 GB of download the first time;
+> run it again after an interruption and it resumes). Options, set in the same line before `irm`, for example
+> `$env:PNH_DRIVE='E:'; $env:PNH_PROFILE='standard'; irm ... | iex` – see [One line, on Windows](#one-line-on-windows).
+
 > [!IMPORTANT]
 > **Status: version 0.1, early.** The code has automated tests (Pester) that run on Linux and Windows in CI,
 > for Windows PowerShell 5.1 and PowerShell 7. On every change an **end-to-end test on Windows** (GitHub's
@@ -122,17 +132,28 @@ If the SSD is already exFAT, you can skip the download and unzip:
 irm https://raw.githubusercontent.com/MisterDeeds/plug-n-heal/main/install.ps1 | iex
 ```
 
-It downloads the current version from GitHub, asks for the SSD's drive letter, and builds **Full** (all seven
-models, about 82 GB of download) by default. Everything works from a temp folder and is deleted afterwards;
-the builder itself runs in its own window. To build a different profile or to skip the question about the
-drive letter:
+It downloads the current version from GitHub, asks for the SSD's drive letter, builds **Full** (all seven
+models, about 82 GB of download) by default and then sets up the [network rescue kit](#network-rescue-kit-one-command)
+on the same SSD (Ollama runtime, Codex CLI and its language model, about 20 GB). Everything works from a temp folder
+and is deleted afterwards; the builder itself runs in its own window, the rescue kit in the PowerShell window.
+
+Options, set in the same line before `irm` (all optional):
+
+| Setting | Values | Default |
+|---|---|---|
+| `$env:PNH_DRIVE` | drive letter of the SSD, for example `'E:'` | asks |
+| `$env:PNH_PROFILE` | `'small'`, `'standard'`, `'full'` (see the table above) | `'full'` |
+| `$env:PNH_KIT` | `'yes'` or `'no'` (app only, without the network rescue kit) | `'yes'` |
+| `$env:PNH_KIT_MODEL` | Ollama model tag for the rescue kit, for example `'qwen3.5:9b'` for a small SSD | what the drive already uses, else `qwen3.8:27b` |
+
+For example, no questions, Standard profile, everything else as default:
 
 ```powershell
-$env:PNH_DRIVE = 'E:'; $env:PNH_PROFILE = 'standard'
-irm https://raw.githubusercontent.com/MisterDeeds/plug-n-heal/main/install.ps1 | iex
+$env:PNH_DRIVE = 'E:'; $env:PNH_PROFILE = 'standard'; irm https://raw.githubusercontent.com/MisterDeeds/plug-n-heal/main/install.ps1 | iex
 ```
 
-If the build stops (for example the connection drops), run the same line again – it resumes where it stopped.
+If it stops (for example the connection drops), run the same line again – it resumes where it stopped. The
+PowerShell window stays open at the end, so you can read the result.
 
 ### On Windows (step by step)
 
@@ -374,7 +395,7 @@ builder), and report false alarms.
 
 | Path | Content |
 |---|---|
-| `install.ps1` | One-line builder for Windows: `irm ... | iex` downloads the repo from GitHub and builds the SSD |
+| `install.ps1` | One-line builder for Windows: `irm ... | iex` downloads the repo from GitHub, builds the SSD and then runs `sync-drive.ps1` for the network rescue kit (`PNH_DRIVE`, `PNH_PROFILE`, `PNH_KIT`, `PNH_KIT_MODEL`) |
 | `BUILD.cmd`, `builder/` | Builder: Windows wizard `Build-Drive.ps1`, Linux/macOS `build-drive.sh`, pinned runtime `versions.json` |
 | `src/` | Copied to the drive as `PlugNHeal\app\`: `START.cmd`, `Start.ps1`, `Ui.ps1` (WinForms), `Run-Headless.ps1` |
 | `src/lib/` | `Common`, `Hardware`, `Models`, `Ollama`, `Diagnose`, `Toolbox`, `Agent` |

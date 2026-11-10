@@ -2,8 +2,9 @@
 
 The builder turns an empty external SSD into a Plug'n'Heal drive that later works without internet. There are
 two builders with the same result on the drive; on Windows there is also the one-line entry point
-`install.ps1` (README, "One line, on Windows"), which downloads the current version from GitHub and runs
-the Windows builder with `-NonInteractive`.
+`install.ps1` (README, "One line, on Windows"), which downloads the current version from GitHub, runs
+the Windows builder with `-NonInteractive` and then `sync-drive.ps1` for the network rescue kit on the same drive
+(skip it with `$env:PNH_KIT='no'`).
 
 | Builder | Runs on | Start | How it gets the models |
 |---|---|---|---|

@@ -8,6 +8,18 @@ häufige Probleme. Ohne Internet.**
 [![CI](https://github.com/MisterDeeds/plug-n-heal/actions/workflows/ci.yml/badge.svg)](https://github.com/MisterDeeds/plug-n-heal/actions/workflows/ci.yml)
 [![Lizenz: Apache-2.0](https://img.shields.io/badge/licence-Apache--2.0-blue.svg)](LICENSE)
 
+> [!TIP]
+> **Alles auf eine SSD mit einem Befehl:** die Plug'n'Heal-App mit allen sieben KI-Modellen **und** das
+> Netzwerk-Rettungsset (Ollama, Codex CLI und Sprachmodell; repariert einen PC, der kein Netzwerk mehr hat). SSD
+> anstecken (exFAT oder NTFS, 128 GB oder mehr für alles), PowerShell öffnen und einfügen:
+> ```powershell
+> irm https://raw.githubusercontent.com/MisterDeeds/plug-n-heal/main/install.ps1 | iex
+> ```
+> Er fragt nach dem Laufwerksbuchstaben und läuft, bis alles da ist (beim ersten Mal ca. 103 GB Download; nach
+> einer Unterbrechung dieselbe Zeile nochmals, er macht weiter). Einstellungen stehen in derselben Zeile vor `irm`,
+> zum Beispiel `$env:PNH_DRIVE='E:'; $env:PNH_PROFILE='standard'; irm ... | iex`, siehe
+> [In einer Zeile, auf Windows](#in-einer-zeile-auf-windows).
+
 > [!IMPORTANT]
 > **Stand: Version 0.1, noch früh.** Der Programmcode wird automatisch getestet (Pester, auf Linux und Windows,
 > mit Windows PowerShell 5.1 und PowerShell 7). Bei jeder Änderung läuft zudem ein **Gesamttest unter Windows**
@@ -116,18 +128,30 @@ Wenn die SSD schon exFAT ist, können Sie das Herunterladen und Entpacken übers
 irm https://raw.githubusercontent.com/MisterDeeds/plug-n-heal/main/install.ps1 | iex
 ```
 
-Das lädt die aktuelle Version von GitHub, fragt nach dem Laufwerksbuchstaben der SSD und baut **Vollständig**
-(alle sieben Modelle, ca. 82 GB Download) als Standard. Alles läuft aus einem Temp-Ordner und wird danach
-wieder entfernt; der Assistent öffnet ein eigenes Fenster. Für ein anderes Profil oder ohne Frage nach dem
-Laufwerk:
+Das lädt die aktuelle Version von GitHub, fragt nach dem Laufwerksbuchstaben der SSD, baut **Vollständig**
+(alle sieben Modelle, ca. 82 GB Download) als Standard und richtet danach auf derselben SSD das
+Netzwerk-Rettungsset ein (Ollama, Codex CLI und sein Sprachmodell, ca. 20 GB). Alles läuft aus einem Temp-Ordner
+und wird danach wieder entfernt; der Assistent öffnet ein eigenes Fenster, das Rettungsset läuft im
+PowerShell-Fenster. Für alles zusammen braucht die SSD 128 GB oder mehr.
+
+Einstellungen, in derselben Zeile vor `irm` (alle freiwillig):
+
+| Einstellung | Werte | Standard |
+|---|---|---|
+| `$env:PNH_DRIVE` | Laufwerksbuchstabe der SSD, zum Beispiel `'E:'` | fragt nach |
+| `$env:PNH_PROFILE` | `'small'`, `'standard'`, `'full'` (Tabelle oben) | `'full'` |
+| `$env:PNH_KIT` | `'yes'` oder `'no'` (nur die App, ohne Rettungsset) | `'yes'` |
+| `$env:PNH_KIT_MODEL` | Ollama-Modell für das Rettungsset, zum Beispiel `'qwen3.5:9b'` für eine kleine SSD | was die SSD schon hat, sonst `qwen3.8:27b` |
+
+Zum Beispiel ohne Rückfrage, Profil Standard, sonst alles wie vorgegeben:
 
 ```powershell
-$env:PNH_DRIVE = 'E:'; $env:PNH_PROFILE = 'standard'
-irm https://raw.githubusercontent.com/MisterDeeds/plug-n-heal/main/install.ps1 | iex
+$env:PNH_DRIVE = 'E:'; $env:PNH_PROFILE = 'standard'; irm https://raw.githubusercontent.com/MisterDeeds/plug-n-heal/main/install.ps1 | iex
 ```
 
 Wenn der Lauf unterbrochen wird (zum Beispiel weil die Verbindung abbricht), dieselbe Zeile erneut ausführen –
-der Download geht dort weiter, wo er aufgehört hat.
+der Download geht dort weiter, wo er aufgehört hat. Das PowerShell-Fenster bleibt am Ende offen, damit Sie das
+Ergebnis lesen können.
 
 ### Unter Windows (Schritt für Schritt)
 

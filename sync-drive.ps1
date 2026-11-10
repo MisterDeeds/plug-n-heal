@@ -23,6 +23,11 @@
 .PARAMETER Notes   Optional facts about the fault for the agent (saved as work\NOTES.md on the drive).
 .PARAMETER Ref     Branch, tag or commit of the repository to take the kit files from. Default: main.
 .PARAMETER Root    Advanced: use this folder instead of <drive>:\AI.
+.PARAMETER SkipSpeedTest  Do not measure the write speed of the drive.
+
+  Checks before anything is downloaded: the drive is not FAT32, there is enough free space for everything that is
+  still missing (otherwise it names smaller models that would fit), and how fast the drive writes (a slow USB stick
+  or a USB 2 port makes the first download and every start of the model slow).
 #>
 param(
     [string]$Drive = '',
@@ -31,11 +36,12 @@ param(
     [string]$Ref = 'main',
     [string]$Repo = 'MisterDeeds/plug-n-heal',
     [string]$Root = '',
-    [string]$Effort = ''
+    [string]$Effort = '',
+    [switch]$SkipSpeedTest
 )
 
 function Invoke-PnhKitSync {
-    param([string]$Drive, [string]$Model, [string]$Notes, [string]$Ref, [string]$Repo, [string]$Root, [string]$Effort)
+    param([string]$Drive, [string]$Model, [string]$Notes, [string]$Ref, [string]$Repo, [string]$Root, [string]$Effort, [switch]$SkipSpeedTest)
 
     $ErrorActionPreference = 'Stop'
     $ProgressPreference = 'SilentlyContinue'
@@ -155,6 +161,47 @@ function Invoke-PnhKitSync {
         if (-not $ok) { throw 'Downloading the model was interrupted. Run the command again, it resumes.' }
     }
 
+    function Get-DriveDescription([string]$DriveLetter) {
+        # model name, bus (USB, NVMe, SATA) and media type; empty when Windows cannot tell (network or subst drives)
+        try {
+            $part = Get-Partition -DriveLetter $DriveLetter -ErrorAction Stop
+            $disk = $part | Get-Disk -ErrorAction Stop
+            $media = ''
+            try {
+                $pd = Get-PhysicalDisk -ErrorAction Stop | Where-Object { [string]$_.DeviceId -eq [string]$disk.Number } | Select-Object -First 1
+                if ($pd -and ([string]$pd.MediaType) -and ([string]$pd.MediaType -ne 'Unspecified')) { $media = ', ' + [string]$pd.MediaType }
+            } catch { }
+            return ('{0} (bus {1}{2}, {3:N0} GB)' -f ([string]$disk.FriendlyName).Trim(), [string]$disk.BusType, $media, ($disk.Size / 1GB))
+        } catch { return '' }
+    }
+
+    function Measure-WriteSpeed([string]$Dir) {
+        # writes up to 1 GB with write-through (no cache in between) and stops after about 15 seconds;
+        # returns MB/s, or -1 when the test could not run. The test file is removed again.
+        $file = Join-Path $Dir ('speedtest-' + [guid]::NewGuid().ToString('N') + '.tmp')
+        $buf = New-Object byte[] (4MB)
+        (New-Object System.Random 7).NextBytes($buf)
+        $written = [int64]0
+        $sw = [System.Diagnostics.Stopwatch]::StartNew()
+        try {
+            $fs = New-Object System.IO.FileStream($file, [System.IO.FileMode]::CreateNew, [System.IO.FileAccess]::Write, [System.IO.FileShare]::None, 4096, [System.IO.FileOptions]::WriteThrough)
+            try {
+                while (($written -lt 1GB) -and ($sw.Elapsed.TotalSeconds -lt 15)) {
+                    $fs.Write($buf, 0, $buf.Length)
+                    $written += $buf.Length
+                }
+                $fs.Flush($true)
+            } finally { $fs.Close() }
+            $sec = $sw.Elapsed.TotalSeconds
+            if ($sec -le 0) { return -1 }
+            return [math]::Round(($written / 1MB) / $sec)
+        } catch {
+            return -1
+        } finally {
+            Remove-Item -LiteralPath $file -Force -ErrorAction SilentlyContinue
+        }
+    }
+
     Say ''
     Say "Plug'n'Heal network rescue kit - sync" 'Cyan'
 
@@ -191,7 +238,24 @@ function Invoke-PnhKitSync {
     }
     $work = Join-Path $rootPath 'work'
     New-Item -ItemType Directory -Force -Path $rootPath, $work | Out-Null
-    Say ('Target: ' + $rootPath + '   (' + $di.DriveFormat + ', ' + (Gb $di.AvailableFreeSpace) + ' free)')
+    Say ('Target: ' + $rootPath + '   (' + $di.DriveFormat + ', ' + (Gb $di.TotalSize) + ' in total, ' + (Gb $di.AvailableFreeSpace) + ' free)')
+    $desc = Get-DriveDescription $letter
+    if ($desc) { Say ('Drive:  ' + $desc) }
+
+    $speed = -1
+    if (-not $SkipSpeedTest) {
+        Say ''
+        Say 'Checking the drive speed (writes up to 1 GB, takes at most 15 seconds) ...' 'Cyan'
+        $speed = Measure-WriteSpeed $work
+        if ($speed -lt 0) { Say '   the speed test could not run - continuing anyway' 'DarkYellow' }
+        elseif ($speed -ge 250) { Say ('   writes ' + $speed + ' MB/s - fast, good') 'Green' }
+        elseif ($speed -ge 80) { Say ('   writes ' + $speed + ' MB/s - usable') 'Green' }
+        else {
+            Say ('   writes only ' + $speed + ' MB/s - slow. This is typical for a USB stick or a USB 2 port.') 'Yellow'
+            Say '   It works, but the first download and every start of the model take much longer.' 'Yellow'
+            Say '   Better: an external SSD on a blue USB 3 or a USB-C port.' 'Yellow'
+        }
+    }
 
     # ---------- what is already there ----------
     $kitFile = Join-Path $rootPath 'kit.json'
@@ -229,8 +293,46 @@ function Invoke-PnhKitSync {
         }
         $need += [math]::Max([int64]0, ($modelNeed - $haveBlobs))
     }
-    if (($need -gt 0) -and ($di.AvailableFreeSpace -lt ($need + 500MB))) {
-        throw ('Not enough free space on ' + $letter + ': ' + (Gb $di.AvailableFreeSpace) + ' free, ' + (Gb ($need + 500MB)) + ' needed.')
+    Say ''
+    Say 'Checking what is missing and whether it fits ...' 'Cyan'
+    $rows = @(
+        @('Ollama runtime', $haveOllama, ($OllamaPkg.Bytes + $OllamaPkg.Unpacked)),
+        @('Codex CLI', $haveCodex, ($CodexPkg.Bytes + $CodexPkg.Unpacked))
+    )
+    foreach ($r in $rows) {
+        if ($r[1]) { Say ('   {0,-28} already on the drive' -f $r[0]) }
+        else { Say ('   {0,-28} missing, needs {1} while downloading' -f $r[0], (Gb $r[2])) }
+    }
+    if ($modelBytes) { Say ('   {0,-28} already on the drive ({1})' -f ('Model ' + $Model), (Gb $modelBytes)) }
+    else { Say ('   {0,-28} missing, needs {1}' -f ('Model ' + $Model), (Gb ($need - (@($rows | Where-Object { -not $_[1] } | ForEach-Object { $_[2] }) | Measure-Object -Sum).Sum))) }
+    $needTotal = [int64]0
+    if ($need -gt 0) { $needTotal = $need + 500MB }
+    Say ('   free on the drive: {0}, needed: {1}' -f (Gb $di.AvailableFreeSpace), (Gb $needTotal))
+    if (($need -gt 0) -and ($di.AvailableFreeSpace -lt $needTotal)) {
+        Say ''
+        Say ('Not enough free space on ' + $letter + ':.') 'Red'
+        # smaller models that can call tools, measured sizes (Ollama library, November 2026)
+        $smaller = @(
+            @('qwen3.5:9b-q4_K_M', [int64]6550825550, 'graphics card with 8 GB or more'),
+            @('qwen3.5:4b-q4_K_M', [int64]3324173934, 'graphics card with 5 GB or more, or a fast processor'),
+            @('qwen3.5:2b-q4_K_M', [int64]1945781358, 'any PC, weakest results')
+        )
+        $base = $need
+        if (-not $modelBytes) { $base = $need - [math]::Max([int64]0, ($modelNeed - $haveBlobs)) }
+        $fits = @($smaller | Where-Object { ($base + $_[1] + 500MB) -le $di.AvailableFreeSpace })
+        if ($fits.Count -gt 0) {
+            Say 'A smaller model would fit. Run the command again with one of these (bigger = better repairs):' 'Yellow'
+            foreach ($s in $fits) { Say ('   -Model {0}   ({1}, {2})' -f $s[0], (Gb $s[1]), $s[2]) 'Yellow' }
+            Say ('   Example: & ([scriptblock]::Create((irm -UseBasicParsing https://raw.githubusercontent.com/' + $Repo + '/main/sync-drive.ps1))) -Drive ' + $letter + ' -Model ' + $fits[0][0]) 'Yellow'
+        } else {
+            Say 'Even the smallest model does not fit. Free up space on the drive or use a bigger one (64 GB or more).' 'Yellow'
+        }
+        throw ('Not enough free space on ' + $letter + ': ' + (Gb $di.AvailableFreeSpace) + ' free, ' + (Gb $needTotal) + ' needed.')
+    }
+    Say '   it fits' 'Green'
+    if (($speed -gt 0) -and (-not $modelBytes)) {
+        $mins = [math]::Ceiling((($need / 1MB) / $speed) / 60)
+        Say ('   writing it to this drive takes at least about {0} minute(s); your internet speed may make it longer' -f $mins) 'DarkGray'
     }
 
     # ---------- 1. kit files from GitHub (always refreshed) ----------
@@ -353,6 +455,7 @@ function Invoke-PnhKitSync {
     $info = [ordered]@{
         model    = $Model
         effort   = $Effort
+        writeMBs = $speed
         ollama   = $ollamaState
         codex    = $codexState
         source   = ($Repo + '@' + $Ref)
@@ -382,4 +485,4 @@ function Invoke-PnhKitSync {
     Say ''
 }
 
-Invoke-PnhKitSync -Drive $Drive -Model $Model -Notes $Notes -Ref $Ref -Repo $Repo -Root $Root -Effort $Effort
+Invoke-PnhKitSync -Drive $Drive -Model $Model -Notes $Notes -Ref $Ref -Repo $Repo -Root $Root -Effort $Effort -SkipSpeedTest:$SkipSpeedTest

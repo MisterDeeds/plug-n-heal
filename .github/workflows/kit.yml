@@ -57,6 +57,26 @@ jobs:
           $cmd = [System.IO.File]::ReadAllText('P:\AI\Start-Repair.cmd')
           if ($cmd -notmatch "`r`n") { throw 'Start-Repair.cmd has no CRLF line ends' }
           Get-Content P:\AI\kit.json
+          $kit = Get-Content P:\AI\kit.json -Raw | ConvertFrom-Json
+          if ([int]$kit.writeMBs -le 0) { throw 'the speed test did not run' }
+          if (@(Get-ChildItem P:\AI\work -Filter 'speedtest-*.tmp').Count) { throw 'the speed test left its file behind' }
+
+      - name: A model that does not fit is refused before any download
+        shell: powershell
+        timeout-minutes: 5
+        run: |
+          if (-not (Test-Path -LiteralPath 'P:\')) { subst.exe P: (Join-Path $env:RUNNER_TEMP 'kitdrive') }
+          $before = (Get-ChildItem P:\AI -Recurse -File | Measure-Object -Property Length -Sum).Sum
+          $out = ''
+          try { $out = & .\sync-drive.ps1 -Drive P -Model 'qwen3-coder:480b-a35b-fp16' -Ref $env:GITHUB_SHA -SkipSpeedTest *>&1 | Out-String } catch { $out += $_.Exception.Message }
+          $out
+          if ($out -notmatch 'Not enough free space') { throw 'a 960 GB model was not refused' }
+          if ($out -notmatch '-Model qwen3\.5:') { throw 'no smaller model was suggested' }
+          $after = (Get-ChildItem P:\AI -Recurse -File | Measure-Object -Property Length -Sum).Sum
+          if ($after -ne $before) { throw "files on the drive changed: $before -> $after bytes" }
+          $kit = Get-Content P:\AI\kit.json -Raw | ConvertFrom-Json
+          if ($kit.model -ne $env:KIT_MODEL) { throw 'the refused model must not be written to kit.json' }
+          $global:LASTEXITCODE = 0
 
       - name: Second sync must not download anything again
         shell: powershell

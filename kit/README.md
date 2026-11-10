@@ -19,7 +19,17 @@ On any Windows 10/11 PC with internet: plug in the drive, open PowerShell and pa
 irm -UseBasicParsing https://raw.githubusercontent.com/MisterDeeds/plug-n-heal/main/sync-drive.ps1 | iex
 ```
 
-The command lists the drives, asks for the letter of your drive and then does everything by itself:
+The command lists the drives, asks for the letter of your drive and then does everything by itself. First it
+checks the drive:
+
+- **Format:** FAT32 is refused (it cannot hold files over 4 GB), with a hint how to format it as exFAT.
+- **Speed:** it writes up to 1 GB (at most 15 seconds) and reports MB/s. Below 80 MB/s it warns that this is
+  probably a USB stick or a USB 2 port, which works but makes the first download and every model start slow.
+  `-SkipSpeedTest` turns this off.
+- **Space:** it lists what is missing and how much room that needs. When it does not fit, it stops before
+  downloading anything and names smaller models that would fit.
+
+Then:
 
 | Part | Size | When it is downloaded |
 |---|---|---|
@@ -44,6 +54,7 @@ With parameters:
 | `-Model <tag>` | another Ollama model that can call tools, for example `qwen3.5:9b-q4_K_M` (6.6 GB) for a graphics card with 8 to 12 GB |
 | `-Effort xhigh` | how hard the model thinks before each step: `low`, `medium` or `xhigh` (the default of the kit). `qwen3.8` on its own would use `medium`. Higher is slower per step and more careful. |
 | `-Ref <branch, tag or commit>` | take the kit files from another version of this repository |
+| `-SkipSpeedTest` | do not measure the write speed of the drive |
 
 The drive must be exFAT or NTFS (FAT32 cannot hold files over 4 GB) and needs about 25 GB of free space.
 

@@ -7,6 +7,21 @@ English | [Deutsch](README.de.md)
 [![CI](https://github.com/MisterDeeds/plug-n-heal/actions/workflows/ci.yml/badge.svg)](https://github.com/MisterDeeds/plug-n-heal/actions/workflows/ci.yml)
 [![Licence: Apache-2.0](https://img.shields.io/badge/licence-Apache--2.0-blue.svg)](LICENSE)
 
+> [!TIP]
+> **TL;DR: a PC lost its network? One command, then one double-click.**
+>
+> 1. Plug an external SSD (exFAT or NTFS, 64 GB or more) into **any** Windows PC with internet.
+> 2. Open PowerShell and paste:
+>    ```powershell
+>    irm -UseBasicParsing https://raw.githubusercontent.com/MisterDeeds/plug-n-heal/main/sync-drive.ps1 | iex
+>    ```
+> 3. Type the drive letter of the SSD. Done when it says `DONE`. It checks the drive first (format, free space,
+>    write speed), then downloads what is missing (about 20 GB the first time, nothing on later runs).
+> 4. Plug the SSD into the broken PC, double-click `AI\Start-Repair.cmd` (the command's last line shows the exact
+>    path), answer **Yes**.
+>
+> The same command updates the drive later. Details and risks: [network rescue kit](#network-rescue-kit-one-command).
+
 > [!IMPORTANT]
 > **Status: version 0.1, early.** The code has automated tests (Pester) that run on Linux and Windows in CI,
 > for Windows PowerShell 5.1 and PowerShell 7. On every change an **end-to-end test on Windows** (GitHub's

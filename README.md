@@ -25,7 +25,8 @@ English | [Deutsch](README.de.md)
 ## Contents
 
 - [What it does](#what-it-does) · [How it works](#how-it-works) · [What you need](#what-you-need)
-- [Build your Plug'n'Heal drive](#build-your-plugnheal-drive) · [Use it](#use-it)
+- [Build your Plug'n'Heal drive](#build-your-plugnheal-drive) · [Use it](#use-it) ·
+  [Network rescue kit: one command](#network-rescue-kit-one-command)
 - [Which AI model will my PC use?](#which-ai-model-will-my-pc-use)
 - [Safety: what it never does](#safety-what-it-never-does) · [What can go wrong](#what-can-go-wrong) ·
   [Privacy](#privacy)
@@ -165,6 +166,37 @@ You can stop at any time with **Cancel**. What is already done stays done.
 
 The report (`summary.txt`) and the detailed log are on the SSD in `PlugNHeal\logs\<computer name>-<date and
 time>\`. If the problem is not solved, show this report to someone who knows computers.
+
+## Network rescue kit: one command
+
+A second, more direct tool for one hard case: **a PC that has lost its network connection**. A local agent (the
+Codex CLI with a large local model through Ollama) works on the PC with administrator rights, runs commands by
+itself and keeps going in rounds until a network check passes. It shows live what it says and which command it runs.
+
+> [!CAUTION]
+> This agent has a real command line with administrator rights and does not ask before each step. It works under
+> written rules, not inside a fixed catalogue like the app above. Read [kit/README.md](kit/README.md) first.
+
+**Prepare or update the drive** on any Windows PC with internet. Plug in the SSD, open PowerShell and paste:
+
+```powershell
+irm -UseBasicParsing https://raw.githubusercontent.com/MisterDeeds/plug-n-heal/main/sync-drive.ps1 | iex
+```
+
+The command lists the drives and asks for the letter of your SSD. Then it does everything by itself:
+
+- It always refreshes the small kit files (scripts and instructions) from this repository.
+- It keeps what is already on the drive. The Ollama runtime (1.6 GB), the Codex CLI (0.2 GB) and the language model
+  (`qwen3.8:27b`, 17.7 GB) are only downloaded when they are missing. An interrupted download resumes.
+- Run it again any time to bring the drive up to date.
+
+**Use it:** plug the SSD into the PC with the problem, open the drive, double-click `AI\Start-Repair.cmd` and answer
+the Windows question with Yes. It stops when the network works, when a restart is needed, or when it is blocked and
+explains why.
+
+Needs Windows 10 or 11 (64-bit), an exFAT or NTFS drive with about 25 GB free and, for good speed, a graphics card
+with 24 GB of memory. Status: the sync and the harness are tested on Windows; a real repair with the large model is
+not proven yet. Details, parameters and limits: [kit/README.md](kit/README.md).
 
 ## Which AI model will my PC use?
 

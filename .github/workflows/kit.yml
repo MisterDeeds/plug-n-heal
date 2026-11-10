@@ -1,0 +1,98 @@
+name: Kit
+
+# Tests the network rescue kit: one-shot sync onto a fresh drive, a second sync that must not download anything
+# again, the read-only tools and the start of the harness. Runs only when the kit changes.
+
+on:
+  push:
+    paths:
+      - 'kit/**'
+      - 'sync-drive.ps1'
+      - '.github/workflows/kit.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: kit-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  sync-windows:
+    name: sync a drive and start the harness (Windows PowerShell 5.1)
+    runs-on: windows-latest
+    timeout-minutes: 45
+    env:
+      KIT_MODEL: qwen3.5:2b-q4_K_M
+    steps:
+      - name: Check out
+        uses: actions/checkout@v7
+
+      - name: Parse and encoding
+        shell: powershell
+        timeout-minutes: 5
+        run: |
+          $bad = 0
+          foreach ($f in @(Get-ChildItem -Path kit -Recurse -Filter *.ps1) + @(Get-Item sync-drive.ps1)) {
+            $e = $null; $t = $null
+            [void][System.Management.Automation.Language.Parser]::ParseFile($f.FullName, [ref]$t, [ref]$e)
+            $nonAscii = @([System.IO.File]::ReadAllBytes($f.FullName) | Where-Object { $_ -gt 127 }).Count
+            "{0}: {1} parse errors, {2} non-ASCII bytes" -f $f.Name, @($e).Count, $nonAscii
+            if (@($e).Count -gt 0 -or $nonAscii -gt 0) { $bad++; $e | Select-Object -First 3 | ForEach-Object { "   " + $_.Message + " (line " + $_.Extent.StartLineNumber + ")" } }
+          }
+          if ($bad -gt 0) { throw "$bad file(s) with problems" }
+
+      - name: First sync (fresh drive, small model)
+        shell: powershell
+        timeout-minutes: 30
+        run: |
+          $base = Join-Path $env:RUNNER_TEMP 'kitdrive'
+          New-Item -ItemType Directory -Force -Path $base | Out-Null
+          subst.exe P: $base
+          & .\sync-drive.ps1 -Drive P -Model $env:KIT_MODEL -Notes 'CI test run' -Ref $env:GITHUB_SHA
+          foreach ($f in 'Start-Repair.cmd', 'agent.ps1', 'AGENTS.md', 'KIT-README.md', 'tools\check-network.ps1', 'tools\find-blockers.ps1', 'kit.json', 'ollama\ollama.exe', 'codex\bin\codex.exe', 'work\NOTES.md') {
+            if (-not (Test-Path -LiteralPath ("P:\AI\" + $f))) { throw "missing P:\AI\$f" }
+          }
+          $cmd = [System.IO.File]::ReadAllText('P:\AI\Start-Repair.cmd')
+          if ($cmd -notmatch "`r`n") { throw 'Start-Repair.cmd has no CRLF line ends' }
+          Get-Content P:\AI\kit.json
+
+      - name: Second sync must not download anything again
+        shell: powershell
+        timeout-minutes: 5
+        run: |
+          if (-not (Test-Path -LiteralPath 'P:\')) { subst.exe P: (Join-Path $env:RUNNER_TEMP 'kitdrive') }
+          $sw = [System.Diagnostics.Stopwatch]::StartNew()
+          $out = & .\sync-drive.ps1 -Drive P -Ref $env:GITHUB_SHA *>&1 | Out-String
+          $out
+          $n = ([regex]::Matches($out, 'already on the drive')).Count
+          if ($n -ne 3) { throw "expected 3 'already on the drive' lines, got $n" }
+          if ($out -notmatch '0 updated') { throw 'kit files should be unchanged on the second run' }
+          if ($sw.Elapsed.TotalSeconds -gt 120) { throw 'the second sync took too long' }
+          $kit = Get-Content P:\AI\kit.json -Raw | ConvertFrom-Json
+          if ($kit.model -ne $env:KIT_MODEL) { throw "the model on the drive must be kept, kit.json says $($kit.model)" }
+
+      - name: Read-only tools
+        shell: powershell
+        timeout-minutes: 5
+        run: |
+          if (-not (Test-Path -LiteralPath 'P:\')) { subst.exe P: (Join-Path $env:RUNNER_TEMP 'kitdrive') }
+          & powershell.exe -NoProfile -ExecutionPolicy Bypass -File P:\AI\tools\check-network.ps1
+          if ($LASTEXITCODE -ne 0) { throw 'the network check should pass on the runner' }
+          & powershell.exe -NoProfile -ExecutionPolicy Bypass -File P:\AI\tools\find-blockers.ps1
+          if ($LASTEXITCODE -ne 0) { throw 'find-blockers.ps1 failed' }
+          if (-not @(Get-ChildItem P:\AI\work -Filter 'report-*.txt').Count) { throw 'no report file written' }
+
+      - name: Harness start (the network works, so round 1 must report SOLVED)
+        shell: powershell
+        timeout-minutes: 10
+        run: |
+          if (-not (Test-Path -LiteralPath 'P:\')) { subst.exe P: (Join-Path $env:RUNNER_TEMP 'kitdrive') }
+          $out = & powershell.exe -NoProfile -ExecutionPolicy Bypass -File P:\AI\agent.ps1 -MaxRounds 1 *>&1 | Out-String
+          $code = $LASTEXITCODE
+          $out
+          Get-Process ollama -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+          if ($out -notmatch 'SOLVED') { throw 'the harness did not report SOLVED' }
+          if ($code -ne 0) { throw "the harness ended with exit code $code" }
+          $global:LASTEXITCODE = 0

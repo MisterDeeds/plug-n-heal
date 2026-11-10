@@ -112,6 +112,47 @@ function Invoke-PnhKitSync {
         }
     }
 
+    function Invoke-ModelPull([int]$ApiPort, [string]$Tag) {
+        # POST /api/pull streams one JSON object per line: status, digest, total, completed; at the end "success"
+        $req = [System.Net.HttpWebRequest]::Create('http://127.0.0.1:' + $ApiPort + '/api/pull')
+        $req.Method = 'POST'
+        $req.ContentType = 'application/json'
+        $req.Proxy = $null
+        $req.Timeout = 60000
+        $req.ReadWriteTimeout = 3600000
+        $body = [System.Text.Encoding]::UTF8.GetBytes((@{ model = $Tag; stream = $true } | ConvertTo-Json -Compress))
+        $rs = $req.GetRequestStream()
+        $rs.Write($body, 0, $body.Length)
+        $rs.Close()
+        $resp = $req.GetResponse()
+        $reader = New-Object System.IO.StreamReader($resp.GetResponseStream())
+        $ok = $false
+        $err = ''
+        $sizes = @{}
+        $last = [DateTime]::MinValue
+        try {
+            while ($null -ne ($line = $reader.ReadLine())) {
+                if (-not $line.Trim()) { continue }
+                try { $j = $line | ConvertFrom-Json } catch { continue }
+                if ($j.error) { $err = [string]$j.error; break }
+                if ([string]$j.status -eq 'success') { $ok = $true }
+                if ($j.digest -and $j.total) { $sizes[[string]$j.digest] = @([double]$j.total, [double]$j.completed) }
+                if (((Get-Date) - $last).TotalSeconds -ge 5) {
+                    $last = Get-Date
+                    $tot = 0.0; $done = 0.0
+                    foreach ($v in $sizes.Values) { $tot += $v[0]; $done += $v[1] }
+                    if ($tot -gt 0) { Say ('   {0:N1} of {1:N1} GB ({2:N0} %)  {3}' -f ($done / 1GB), ($tot / 1GB), (100 * $done / $tot), [string]$j.status) }
+                    else { Say ('   ' + [string]$j.status) }
+                }
+            }
+        } finally {
+            $reader.Close()
+            $resp.Close()
+        }
+        if ($err) { throw ('Downloading the model failed: ' + $err) }
+        if (-not $ok) { throw 'Downloading the model was interrupted. Run the command again, it resumes.' }
+    }
+
     Say ''
     Say "Plug'n'Heal network rescue kit - sync" 'Cyan'
 
@@ -279,15 +320,21 @@ function Invoke-PnhKitSync {
             $env:OLLAMA_MODELS = $modelsDir
             $env:OLLAMA_HOST = '127.0.0.1:' + $Port
             $env:OLLAMA_NOPRUNE = '1'
-            $srv = Start-Process -FilePath $ollamaExe -ArgumentList 'serve' -WindowStyle Hidden -PassThru
+            $srvLog = Join-Path $work 'ollama-sync.log'
+            $srv = Start-Process -FilePath $ollamaExe -ArgumentList 'serve' -WindowStyle Hidden -RedirectStandardError $srvLog -PassThru
             $ready = $false
             for ($i = 0; ($i -lt 60) -and (-not $ready); $i++) {
                 Start-Sleep -Seconds 1
                 try { Invoke-RestMethod -UseBasicParsing -TimeoutSec 2 -Uri ('http://127.0.0.1:' + $Port + '/api/tags') | Out-Null; $ready = $true } catch { }
             }
             if (-not $ready) { throw 'The Ollama runtime on the drive does not start on this PC.' }
-            Say '   downloading in a separate window (an interrupted download resumes) ...'
-            $null = Start-Process -FilePath $ollamaExe -ArgumentList @('pull', $Model) -Wait -PassThru
+            Say '   downloading (an interrupted download resumes when you run the command again) ...'
+            try { Invoke-ModelPull $Port $Model }
+            catch {
+                Say ('   ' + $_.Exception.Message) 'Red'
+                if (Test-Path -LiteralPath $srvLog) { Get-Content -LiteralPath $srvLog -Tail 12 -ErrorAction SilentlyContinue | ForEach-Object { Say ('   | ' + $_) 'DarkGray' } }
+                throw
+            }
         } finally {
             if ($srv) { Stop-Process -Id $srv.Id -Force -ErrorAction SilentlyContinue }
             foreach ($k in @($old.Keys)) { [Environment]::SetEnvironmentVariable($k, $old[$k], 'Process') }

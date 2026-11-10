@@ -25,9 +25,9 @@ BeforeAll {
 }
 
 Describe 'Catalogue src/catalog/models.json' {
-    It 'has schema 1 and six models' {
+    It 'has schema 1 and seven models' {
         $catalog.schema | Should -Be 1
-        @($catalog.models).Count | Should -Be 6
+        @($catalog.models).Count | Should -Be 7
     }
     It 'has unique ids and tags' {
         @($catalog.models.id | Select-Object -Unique).Count | Should -Be @($catalog.models).Count
@@ -74,8 +74,8 @@ Describe 'Catalogue src/catalog/models.json' {
         @($catalog.profiles.standard.models) | Should -Be @($catalog.models | Where-Object { $_.default } | ForEach-Object { $_.tag })
         @($catalog.profiles.full.models).Count | Should -Be @($catalog.models).Count
         [double]$catalog.profiles.small.bytes | Should -BeLessThan 6e9
-        [double]$catalog.profiles.standard.bytes | Should -BeLessThan 32e9
-        [double]$catalog.profiles.full.bytes | Should -BeLessThan 64e9
+        [double]$catalog.profiles.standard.bytes | Should -BeLessThan 48e9
+        [double]$catalog.profiles.full.bytes | Should -BeLessThan 81e9
     }
     It 'serialises with ConvertTo-Json -Depth 10' {
         { ConvertTo-Json -InputObject $catalog -Depth 10 } | Should -Not -Throw
@@ -215,9 +215,10 @@ Describe 'Select-PnhModel' {
     }
 
     It 'lists fitting lower-ranked models as fallbacks, best first' {
+        # The unfiltered 27B ranks below every other entry (minVramGB 2 = the smallest GPU start), so it is the last fallback.
         $hw = New-Hw -VramMiB 24564 -RamGiB 31.8
         $sel = Select-PnhModel -Hardware $hw -Installed $allTags -Catalog $catalog
-        @($sel.Fallbacks | ForEach-Object { $_.tag }) | Should -Be @('qwen3.6:35b-a3b-mtp-q4_K_M', 'qwen3.5:9b-q8_0', 'qwen3.5:9b-q4_K_M', 'qwen3.5:4b-q4_K_M', 'qwen3.5:2b-q4_K_M')
+        @($sel.Fallbacks | ForEach-Object { $_.tag }) | Should -Be @('qwen3.6:35b-a3b-mtp-q4_K_M', 'qwen3.5:9b-q8_0', 'qwen3.5:9b-q4_K_M', 'qwen3.5:4b-q4_K_M', 'qwen3.5:2b-q4_K_M', 'qwen3.8-27b-abliterated:q4_K')
     }
 
     It 'falls back on CPU only to models that fit the CPU rule' {
@@ -269,10 +270,10 @@ Describe 'Select-PnhModel' {
     It 'gives every candidate its own placement and context: a 24 GB card steps down from 32k to 16k' {
         $sel = Select-PnhModel -Hardware (New-Hw -VramMiB 24564 -RamGiB 31.8) -Installed $allTags -Catalog $catalog
         $c = @($sel.Candidates)
-        $c.Count | Should -Be 6
-        @($c | ForEach-Object { $_.Model.tag }) | Should -Be @('qwen3.8:27b-q4_K_M', 'qwen3.6:35b-a3b-mtp-q4_K_M', 'qwen3.5:9b-q8_0', 'qwen3.5:9b-q4_K_M', 'qwen3.5:4b-q4_K_M', 'qwen3.5:2b-q4_K_M')
-        @($c | ForEach-Object { $_.Ctx }) | Should -Be @(32768, 32768, 32768, 32768, 16384, 16384)
-        @($c | ForEach-Object { $_.UseGpu }) | Should -Be @($true, $true, $true, $true, $true, $true)
+        $c.Count | Should -Be 7
+        @($c | ForEach-Object { $_.Model.tag }) | Should -Be @('qwen3.8:27b-q4_K_M', 'qwen3.6:35b-a3b-mtp-q4_K_M', 'qwen3.5:9b-q8_0', 'qwen3.5:9b-q4_K_M', 'qwen3.5:4b-q4_K_M', 'qwen3.5:2b-q4_K_M', 'qwen3.8-27b-abliterated:q4_K')
+        @($c | ForEach-Object { $_.Ctx }) | Should -Be @(32768, 32768, 32768, 32768, 16384, 16384, 32768)
+        @($c | ForEach-Object { $_.UseGpu }) | Should -Be @($true, $true, $true, $true, $true, $true, $true)
         foreach ($x in $c) {
             $x.Model.ctx | Should -Be $x.Ctx -Because 'the entry handed to the agent carries the context it was tested with'
             $x.Tag | Should -Be $x.Model.tag

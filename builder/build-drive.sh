@@ -188,7 +188,7 @@ def cmd_profile(catalog, profile):
             continue
         seen.add(m["tag"])
         split_tag(m["tag"])
-        out.append("%s\t%s\t%d" % (m["id"], m["tag"], int(m.get("bytes") or 0)))
+        out.append("%s\t%s\t%d\t%s" % (m["id"], m["tag"], int(m.get("bytes") or 0), m.get("source") or "registry"))
     if not out:
         die("profile '%s' is empty" % profile, 2)
     print("\n".join(out))
@@ -196,6 +196,50 @@ def cmd_profile(catalog, profile):
 
 def cmd_tagpath(tag):
     print("\t".join(split_tag(tag)))
+
+
+def cmd_hfplan(pin_path, tag, manifest_out):
+    # A Hugging Face model is not in the Ollama registry: write its Ollama-style manifest (byte-for-byte in the
+    # shape registry.ollama.ai uses) and print its blobs as  "hexd<TAB>size<TAB>url" rows. url is the pinned
+    # Hugging Face download for GGUF files and "file:<path>" for the small Ollama metadata blobs that live in
+    # this repository (builder/hf-models/). The sha256 of every pinned file is authoritative: for Hugging Face
+    # files it is the Git-LFS object id, so the download is verified by its content.
+    pin = load_json(pin_path, "builder/hf-models.json")
+    m = pin.get("models", {}).get(tag)
+    if not isinstance(m, dict):
+        die("no Hugging Face pin for model '%s' in %s" % (tag, pin_path), 2)
+    base = str(m.get("baseUrl") or "https://huggingface.co").rstrip("/")
+    if not m.get("repo") or not m.get("revision"):
+        die("Hugging Face pin for '%s' is missing repo/revision" % tag, 2)
+    pindir = os.path.dirname(os.path.abspath(pin_path))
+    manifest = {"schemaVersion": 2, "mediaType": "application/vnd.docker.distribution.manifest.v2+json",
+                "config": None, "layers": []}
+    rows = []
+    for b in m.get("blobs", []):
+        role = str(b.get("role"))
+        sha = str(b.get("sha256", "")).lower()
+        size = int(b.get("size") or 0)
+        if not DIGEST_RE.match("sha256:" + sha) or size <= 0:
+            die("Hugging Face pin blob '%s' of '%s' is invalid: %r" % (role, tag, b), 2)
+        entry = {"mediaType": "application/vnd.docker.container.image.v1+json" if role == "config"
+                 else "application/vnd.ollama.image." + role,
+                 "digest": "sha256:" + sha, "size": size}
+        if role == "config":
+            manifest["config"] = entry
+        else:
+            manifest["layers"].append(entry)
+        if b.get("source") == "repo":
+            local = os.path.join(pindir, str(b.get("file", "")).replace("/", os.sep))
+            if not os.path.isfile(local):
+                die("pinned file for blob '%s' of '%s' is missing: %s" % (role, tag, local), 2)
+            rows.append("%s\t%d\tfile:%s" % (sha, size, local))
+        else:
+            url = "%s/%s/resolve/%s/%s" % (base, m["repo"], m["revision"], b.get("name"))
+            rows.append("%s\t%d\t%s" % (sha, size, url))
+    if manifest["config"] is None or not manifest["layers"]:
+        die("Hugging Face pin for '%s' has no config/layer blobs" % tag, 2)
+    write_atomic(manifest_out, (json.dumps(manifest, indent=2) + "\n").encode("utf-8"))
+    print("\n".join(rows))
 
 
 def cmd_entries(path):
@@ -389,7 +433,7 @@ def cmd_fstype(path):
 
 
 CMDS = {
-    "versions": cmd_versions, "profile": cmd_profile, "tagpath": cmd_tagpath, "entries": cmd_entries,
+    "versions": cmd_versions, "profile": cmd_profile, "tagpath": cmd_tagpath, "hfplan": cmd_hfplan, "entries": cmd_entries,
     "sizecheck": cmd_sizecheck, "sha256": cmd_sha256, "zipsize": cmd_zipsize, "unzip": cmd_unzip,
     "mirror": cmd_mirror, "marker-ok": cmd_marker_ok, "write-marker": cmd_write_marker,
     "installed": cmd_installed, "missing": cmd_missing, "licenses": cmd_licenses, "readme": cmd_readme,
@@ -555,23 +599,36 @@ The builder takes the model list from src/catalog/models.json (docs/ARCHITECTURE
 
   say "Plug'n'Heal builder $PNH_VERSION -> $TARGET (profile $PROFILE, Ollama $OLLAMA_VERSION)"
 
-  # 1. Models of the profile and their manifests (re-measured; refuse catalogue mismatches > tolerance)
+  # 1. Models of the profile and their manifests (re-measured; refuse catalogue mismatches > tolerance).
+  # Hugging Face models (catalogue source column) build the same manifest from the pin builder/hf-models.json.
   py profile "$CATALOG_FILE" "$PROFILE" >"$WORK/models.tsv"
-  local idx=0 id tag cbytes ns name t total hexd size
+  if grep -q $'\thuggingface$' "$WORK/models.tsv"; then
+    [[ -f $SCRIPT_DIR/hf-models.json ]] || refuse "builder/hf-models.json not found; the model catalogue lists Hugging Face models"
+  fi
+  local idx=0 id tag cbytes src ns name t total hexd size url
   : >"$WORK/plan.tsv"
   : >"$WORK/blobs.tsv"
-  while IFS=$'\t' read -r id tag cbytes <&3; do
+  while IFS=$'\t' read -r id tag cbytes src <&3; do
     IFS=$'\t' read -r ns name t < <(py tagpath "$tag")
     local mf="$WORK/manifest-$idx.json"
-    if fetch_small "$REGISTRY_URL/v2/$ns/$name/manifests/$t" "$mf" "$MANIFEST_ACCEPT"; then :; else
-      [[ $? == 4 ]] && refuse "model $tag not found in the registry"
-      die "could not fetch the manifest of $tag"
+    if [[ $src == "huggingface" ]]; then
+      py hfplan "$SCRIPT_DIR/hf-models.json" "$tag" "$mf" >"$WORK/entries-$idx.tsv"
+    else
+      if fetch_small "$REGISTRY_URL/v2/$ns/$name/manifests/$t" "$mf" "$MANIFEST_ACCEPT"; then :; else
+        [[ $? == 4 ]] && refuse "model $tag not found in the registry"
+        die "could not fetch the manifest of $tag"
+      fi
+      py entries "$mf" >"$WORK/entries-$idx.tsv"
     fi
-    py entries "$mf" >"$WORK/entries-$idx.tsv"
     total=0
-    while IFS=$'\t' read -r hexd size _ <&4; do
+    while IFS=$'\t' read -r hexd size rest <&4; do
       total=$((total + size))
-      printf '%s\t%s\t%s\t%s\n' "$hexd" "$size" "$ns/$name" "$tag" >>"$WORK/blobs.tsv"
+      if [[ $src == "huggingface" ]]; then
+        url="$rest"   # pinned Hugging Face / repository file URL
+      else
+        url="$REGISTRY_URL/v2/$ns/$name/blobs/sha256:$hexd"
+      fi
+      printf '%s\t%s\t%s\t%s\t%s\n' "$hexd" "$size" "$ns/$name" "$tag" "$url" >>"$WORK/blobs.tsv"
     done 4<"$WORK/entries-$idx.tsv"
     if ! py sizecheck "$cbytes" "$total" "$SIZE_TOLERANCE"; then
       refuse "size of $tag differs from the catalogue by more than $SIZE_TOLERANCE %: catalogue $cbytes, registry $total bytes. Update src/catalog/models.json."
@@ -585,7 +642,7 @@ The builder takes the model list from src/catalog/models.json (docs/ARCHITECTURE
   local need_bytes=0 need_disk=0 have
   : >"$WORK/need.tsv"
   local seen=" "
-  while IFS=$'\t' read -r hexd size repo tag <&3; do
+  while IFS=$'\t' read -r hexd size repo tag url <&3; do
     case $seen in *" $hexd "*) continue ;; esac
     seen="$seen$hexd "
     local blob="$BLOBS/sha256-$hexd"
@@ -601,7 +658,7 @@ The builder takes the model list from src/catalog/models.json (docs/ARCHITECTURE
     have=$(fsize "$DOWNLOADS/sha256-$hexd.part")
     need_bytes=$((need_bytes + size - have))
     need_disk=$((need_disk + size - have))
-    printf '%s\t%s\t%s\t%s\n' "$hexd" "$size" "$repo" "$tag" >>"$WORK/need.tsv"
+    printf '%s\t%s\t%s\t%s\t%s\n' "$hexd" "$size" "$repo" "$tag" "$url" >>"$WORK/need.tsv"
   done 3<"$WORK/blobs.tsv"
 
   local runtime_ok=0 zip="$DOWNLOADS/$OLLAMA_ASSET"
@@ -657,21 +714,30 @@ The builder takes the model list from src/catalog/models.json (docs/ARCHITECTURE
   cp -f "$SRC_DIR/START.cmd" "$TARGET/START.cmd.pnh-tmp"
   mv -f "$TARGET/START.cmd.pnh-tmp" "$TARGET/START.cmd"
 
-  # 6. Model blobs straight from the registry, each sha256-verified before it is moved into blobs/
+  # 6. Model blobs (Ollama registry or Hugging Face), each sha256-verified before it is moved into blobs/
   local n=0 count
   count=$(wc -l <"$WORK/need.tsv" | tr -d ' ')
-  while IFS=$'\t' read -r hexd size repo tag <&3; do
+  while IFS=$'\t' read -r hexd size repo tag url <&3; do
     n=$((n + 1))
     local part="$DOWNLOADS/sha256-$hexd.part" label tries
     label="[models] $tag, file $n/$count"
-    for tries in 1 2; do
-      fetch_file "$REGISTRY_URL/v2/$repo/blobs/sha256:$hexd" "$part" "$size" "$label"
-      if (( size >= 100000000 )); then say "$label: checking sha256 ..."; fi
-      if [[ $(py sha256 "$part") == "$hexd" ]]; then break; fi
-      rm -f "$part"
-      [[ $tries == 2 ]] && die "sha256 mismatch for blob $hexd of $tag"
-      warn "sha256 mismatch for blob $hexd of $tag, downloading again"
-    done
+    if [[ $url == file:* ]]; then
+      # pinned Ollama metadata blob from this repository: copy it, verify like every other blob
+      local srcfile="${url#file:}"
+      [[ -f $srcfile ]] || die "pinned source file is missing: $srcfile"
+      say "$label: copying $(basename "$srcfile")"
+      cp -f "$srcfile" "$part"
+      [[ $(py sha256 "$part") == "$hexd" ]] || { rm -f "$part"; die "sha256 mismatch for pinned file $srcfile (expected $hexd)"; }
+    else
+      for tries in 1 2; do
+        fetch_file "$url" "$part" "$size" "$label"
+        if (( size >= 100000000 )); then say "$label: checking sha256 ..."; fi
+        if [[ $(py sha256 "$part") == "$hexd" ]]; then break; fi
+        rm -f "$part"
+        [[ $tries == 2 ]] && die "sha256 mismatch for blob $hexd of $tag"
+        warn "sha256 mismatch for blob $hexd of $tag, downloading again"
+      done
+    fi
     mv -f "$part" "$BLOBS/sha256-$hexd"
   done 3<"$WORK/need.tsv"
   progress_break

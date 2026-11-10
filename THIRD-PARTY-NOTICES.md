@@ -58,8 +58,11 @@ shipped.
 ## 2. Language models
 
 All models of the default catalogue are licensed under the **Apache License 2.0**. This was checked in two places:
-the licence layer of each model's manifest in the Ollama registry (`registry.ollama.ai`), which the builder
-copies to the drive, and the model card on Hugging Face (licence field `apache-2.0`).
+for the models from the Ollama registry the licence layer of each model's manifest (`registry.ollama.ai`), which
+the builder copies to the drive, and for the unfiltered 27B the pinned licence file in
+[`builder/hf-models/`](builder/hf-models/) (the licence of the base model, verified by size and SHA-256 against
+[`builder/hf-models.json`](builder/hf-models.json)); in both cases against the model card on Hugging Face (licence
+field `apache-2.0`).
 
 | Model tag | In profile | Size (bytes) | Licence | Copyright line in the licence layer | Model card |
 |---|---|---|---|---|---|
@@ -68,10 +71,15 @@ copies to the drive, and the model card on Hugging Face (licence field `apache-2
 | [`qwen3.5:9b-q4_K_M`](https://ollama.com/library/qwen3.5:9b-q4_K_M) | standard, full | 6,550,825,550 | Apache-2.0 | Copyright 2026 Alibaba Cloud | [Qwen/Qwen3.5-9B](https://huggingface.co/Qwen/Qwen3.5-9B) |
 | [`qwen3.5:9b-q8_0`](https://ollama.com/library/qwen3.5:9b-q8_0) | full | 10,449,218,124 | Apache-2.0 | Copyright 2026 Alibaba Cloud | [Qwen/Qwen3.5-9B](https://huggingface.co/Qwen/Qwen3.5-9B) |
 | [`qwen3.8:27b-q4_K_M`](https://ollama.com/library/qwen3.8:27b-q4_K_M) | standard, full | 17,741,872,132 | Apache-2.0 | Copyright 2026 Alibaba Cloud | [Qwen/Qwen3.8-27B](https://huggingface.co/Qwen/Qwen3.8-27B) |
+| [`qwen3.8-27b-abliterated:q4_K`](https://huggingface.co/huihui-ai/Huihui-Qwen3.8-27B-abliterated-GGUF) | standard, full | 17,741,871,938 | Apache-2.0 (pinned in `builder/hf-models/apache-2.0.txt`) | Copyright 2026 Alibaba Cloud | [huihui-ai/Huihui-Qwen3.8-27B-abliterated-GGUF](https://huggingface.co/huihui-ai/Huihui-Qwen3.8-27B-abliterated-GGUF), based on [Qwen/Qwen3.8-27B](https://huggingface.co/Qwen/Qwen3.8-27B) |
 | [`qwen3.6:35b-a3b-mtp-q4_K_M`](https://ollama.com/library/qwen3.6:35b-a3b-mtp-q4_K_M) | full | 22,621,314,381 | Apache-2.0 | none (the layer contains the unfilled template line) | [Qwen/Qwen3.6-35B-A3B](https://huggingface.co/Qwen/Qwen3.6-35B-A3B) |
 
-The model files (weights, vision projector, chat template, parameters) are downloaded from the Ollama registry. The
-Qwen models are made by the Qwen team of Alibaba Cloud.
+The model files (weights, vision projector, chat template, parameters) are downloaded from the Ollama registry,
+except the unfiltered 27B, whose files are pinned by size and SHA-256 in
+[`builder/hf-models.json`](builder/hf-models.json) and downloaded from the huihui-ai Hugging Face repository
+(Git-LFS, the SHA-256 is the repository's object id, so every file is verified by its content). The Qwen models are
+made by the Qwen team of Alibaba Cloud; the abliteration (the modification that switches off the base model's
+refusal behaviour) is by huihui-ai.
 
 ## 3. Tools that are part of Windows
 

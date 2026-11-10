@@ -3,7 +3,11 @@
     Plug'n'Heal without a window: hardware -> model -> Ollama -> agent, the same flow as the UI.
 .DESCRIPTION
     Used by CI, experts and scripted tests. Prints one progress line per step. With -Json the progress lines go
-    to stderr and stdout carries only the result as JSON.
+    to stderr and stdout carries only the result as JSON (exitCode, solved, stoppedReason, rounds, nudges,
+    rediagnoses, compactions, seconds, category, model, runFolder, summary, readOnly, wouldHelp, actions, tried,
+    error).
+    The agent keeps going until the success check passes or nothing is left to try; -MaxRounds and -MaxMinutes are
+    its hard limits.
     Exit code: 0 = solved (the category success check passed), 1 = not solved, 2 = error.
 .PARAMETER Category
     Problem category id from toolbox\categories.json (network, slow, disk, printer, sound, update, other, all).
@@ -23,7 +27,9 @@
     Only look, change nothing (same as refusing the UAC prompt in the UI): confirmations are never asked, the summary
     lists what would help.
 .PARAMETER MaxRounds
-    Agent rounds (default 12).
+    Agent rounds at most (default 30).
+.PARAMETER MaxMinutes
+    Wall-clock limit of the agent loop in minutes (default 30).
 .PARAMETER Language
     de or en (default: Windows display language).
 .EXAMPLE
@@ -38,7 +44,8 @@ param(
     [switch]$NoOllamaStart,
     [string]$BaseUrl,
     [switch]$Json,
-    [int]$MaxRounds = 12,
+    [int]$MaxRounds = 30,
+    [int]$MaxMinutes = 30,
     [ValidateSet('de', 'en')][string]$Language,
     [switch]$ReadOnly
 )
@@ -195,7 +202,7 @@ try {
     # 4. Agent (the candidate's entry carries its own ctx, the one the fit test loaded the model with: no reload)
     $agentArgs = @{
         Server = $server; ModelEntry = $entry; Category = $Category; RunFolder = $runFolder
-        OnEvent = $onEvent; Confirm = $confirm; MaxRounds = $MaxRounds; Language = $lang
+        OnEvent = $onEvent; Confirm = $confirm; MaxRounds = $MaxRounds; MaxMinutes = $MaxMinutes; Language = $lang
     }
     if ($UserText) { $agentArgs['UserText'] = $UserText }
     if ($ReadOnly) { $agentArgs['ReadOnly'] = $true }
@@ -217,7 +224,12 @@ try {
 $seconds = [Math]::Round(((Get-Date) - $script:HeadlessStart).TotalSeconds, 1)
 if ($Json) {
     $actions = @()
+    $tried = @()
     if ($result) {
+        foreach ($t in @($result.Tried)) {
+            if ($null -eq $t) { continue }
+            $tried += , [ordered]@{ name = [string](Get-PnhHeadlessMember $t 'Name'); outcome = [string](Get-PnhHeadlessMember $t 'Outcome'); round = (Get-PnhHeadlessMember $t 'Round') }
+        }
         foreach ($a in @($result.Actions)) {
             $actions += , [ordered]@{
                 id = [string](Get-PnhHeadlessMember $a 'Id'); ok = (Get-PnhHeadlessMember $a 'Ok'); verified = (Get-PnhHeadlessMember $a 'Verified')
@@ -230,6 +242,9 @@ if ($Json) {
         solved        = $(if ($result) { [bool]$result.Solved } else { $false })
         stoppedReason = $(if ($result) { $result.StoppedReason } else { 'error' })
         rounds        = $(if ($result) { $result.Rounds } else { 0 })
+        nudges        = $(if ($result) { [int]$result.Nudges } else { 0 })
+        rediagnoses   = $(if ($result) { [int]$result.Rediagnoses } else { 0 })
+        compactions   = $(if ($result) { [int]$result.Compactions } else { 0 })
         seconds       = $seconds
         category      = $Category
         model         = $(if ($entry) { [string](Get-PnhHeadlessMember $entry 'tag') } else { $null })
@@ -238,6 +253,7 @@ if ($Json) {
         readOnly      = [bool]$ReadOnly
         wouldHelp     = $(if ($result) { @($result.WouldHelp) } else { @() })
         actions       = $actions
+        tried         = $tried
         error         = $errorText
     }
     [Console]::Out.WriteLine((ConvertTo-Json -InputObject $out -Depth 6))
@@ -247,6 +263,7 @@ if ($Json) {
         [Console]::Out.WriteLine($result.Summary)
         [Console]::Out.WriteLine('')
     }
+    if ($result) { Write-PnhHeadlessLine ('stopped: {0}, rounds {1}, nudges {2}' -f $result.StoppedReason, $result.Rounds, $result.Nudges) }
     Write-PnhHeadlessLine ('exit {0} after {1} s' -f $exitCode, $seconds)
 }
 exit $exitCode

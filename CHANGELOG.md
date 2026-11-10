@@ -38,11 +38,35 @@ First public version. Not yet tried on real home PCs; see the status note in the
   findings (managed device, Defender for Endpoint isolation, failing disk, fatal hardware errors), filtered free
   PowerShell for the largest models, a "Yes" before every change while the smallest model works
   (`confirmAllChanges`), summary built from verified results only.
+- **Agent keeps going until the problem is fixed.** After every change the harness runs the success check itself and
+  tells the model the result. An answer without a tool call, or `finish` while the check fails and untried repairs are
+  left, gets a nudge ("The check still fails: ... Untried candidates: ... Call the most promising one now.") instead of
+  ending the run; a premature `finish` is refused twice. A repair that worked but did not fix the problem triggers a
+  new diagnosis, and new findings bring new candidates. Tried repairs are tracked and not offered again. Hard limits:
+  30 model rounds and 30 minutes (`-MaxRounds`, `-MaxMinutes`, also in `Run-Headless.ps1`); long conversations are
+  compacted at about 70 % of the model's context. The result reports `Nudges`, `Rediagnoses`, `Compactions` and
+  `Tried`; the stop reasons are now `solved`, `finished`, `exhausted`, `max-rounds`, `time-limit`, `errors`,
+  `cancelled`, `isolation`, `stop-finding` and `error`. Confirmations, the deny-list, stop findings and read-only mode
+  are as strict as before; cancelling now also stops the step the agent was about to run.
+- **One English system prompt** (`src/prompts/system.md`) for every UI language, with a clear working procedure; the
+  first message, tool descriptions, tool results and nudges are English as well. Only the texts for the person are
+  written in their language.
+- **The window says what happens next:** sentences such as "I keep going. Next I try: ..." or "It does not work yet. I
+  am examining the computer again." are shown as the big sentence, stay while the model thinks and are kept in the
+  list of what happened.
 - **Logs** on the drive per run: `run.log`, `run.jsonl`, `diagnose.json`, `chat.jsonl`, `backups\`, `summary.txt`.
 - **Builder** for Windows (`BUILD.cmd`, wizard and `-NonInteractive` mode) and for Linux/macOS
   (`builder/build-drive.sh`): pinned runtime with size and SHA-256 check, resumable downloads, model sizes checked
   against the catalogue, every blob verified, Mark-of-the-Web removed from the copied files, licences, `drive.json`
-  and `README.txt` written to the drive. Never formats; refuses FAT32.
+  and `README.txt` written to the drive. Never formats; refuses FAT32. Models with `"source": "huggingface"` in the
+  catalogue are not in the Ollama registry: the builders download their files from Hugging Face, pinned by size and
+  SHA-256 in `builder/hf-models.json` (the SHA-256 is the repository's Git-LFS object id, so every file is verified
+  by its content), copy the small Ollama metadata blobs from `builder/hf-models/` and write the Ollama-style
+  manifest themselves – the result is byte-for-byte what a registry pull produces.
+- **Unfiltered 27B** (`qwen3.8-27b-abliterated:q4_K`, 17.7 GB) in the `standard` and `full` profiles: the
+  huihui-ai abliteration of the official Qwen3.8 27B (the base model's refusal behaviour is switched off),
+  Apache-2.0. It is never picked automatically (it ranks below every other entry); it is the last fallback on large
+  cards and the choice for `Run-Headless.ps1 -Model qwen3.8-27b-abliterated:q4_K`.
 - **Tests:** Pester 5 tests for every part, for Windows PowerShell 5.1 and PowerShell 7.
 - **Documentation:** README in English and German, architecture, safety, toolbox, models, building and testing
   guides, licence files, security policy, contributing guide, issue and pull request templates.

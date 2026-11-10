@@ -5,7 +5,8 @@
   "fields": {
     "bytes": "Exact download size in bytes (sum of config and all layers, incl. vision projector). The builder re-measures and refuses mismatches above 1 %.",
     "tier": "1-2 small (may run on CPU), 3 mid GPU, 4 large GPU. Select-PnhModel uses only tier <= 2 without a usable GPU. Ranking (largest first) = minVramGB, then tier, then bytes.",
-    "minVramGB": "GiB the model needs on the GPU at 'ctx' (weights incl. projector, KV cache q8_0, buffers). Chosen when best dedicated NVIDIA/AMD VRAM - 1.5 GiB >= minVramGB.",
+    "minVramGB": "GiB the model needs on the GPU at 'ctx' (weights incl. projector, KV cache q8_0, buffers). Chosen when best dedicated NVIDIA/AMD VRAM - 1.5 GiB >= minVramGB. partialOffload models set this to the smallest VRAM from which a GPU start makes sense; the rest of the weights then runs in system RAM.",
+    "source": "Optional. 'huggingface' = the model is not in the Ollama registry; the builders download its GGUF files from Hugging Face (pinned in builder/hf-models.json) and write the Ollama manifest themselves.",
     "gpuMinRamGB": "Optional. Models that are meant to run partially offloaded also need this much system RAM on the GPU path.",
     "partialOffload": "Optional. true = running partly on the CPU is intended (Test-PnhModelFit does not require 90 % on the GPU, only the tokens/s minimum of the tier).",
     "minRamGB": "GiB the model needs on the CPU path (weights, KV cache at 16k, buffers, about 1 GiB margin). Chosen when RAM - 4 GiB >= minRamGB.",
@@ -26,14 +27,15 @@
       "bytes": 5269955292
     },
     "standard": {
-      "description": "Default: one model per class from CPU to 24 GB GPUs.",
+      "description": "Default: one model per class from CPU to 24 GB GPUs, incl. the unfiltered 27B.",
       "models": [
         "qwen3.5:2b-q4_K_M",
         "qwen3.5:4b-q4_K_M",
         "qwen3.5:9b-q4_K_M",
-        "qwen3.8:27b-q4_K_M"
+        "qwen3.8:27b-q4_K_M",
+        "qwen3.8-27b-abliterated:q4_K"
       ],
-      "bytes": 29562652974
+      "bytes": 47304524912
     },
     "full": {
       "description": "Everything, incl. the Q8 9B and the MoE fast mode.",
@@ -43,9 +45,10 @@
         "qwen3.5:9b-q4_K_M",
         "qwen3.5:9b-q8_0",
         "qwen3.8:27b-q4_K_M",
-        "qwen3.6:35b-a3b-mtp-q4_K_M"
+        "qwen3.6:35b-a3b-mtp-q4_K_M",
+        "qwen3.8-27b-abliterated:q4_K"
       ],
-      "bytes": 62633185479
+      "bytes": 80375057417
     }
   },
   "models": [
@@ -164,6 +167,32 @@
       "projectorBytes": 931146016,
       "requires": "0.32.12",
       "notes": "Strongest local agent model (H: Terminal-Bench 2.1 73.0). 24 GB+ cards (measured by others: 20 GB at 32k). Thinking on: GPU-only tier, multi-step reliability matters more than latency; qwen3.8 defaults to reasoning effort xhigh and may think long - mapping of Ollama 'think' to the effort is unverified."
+    },
+    {
+      "id": "qwen3.8-27b-abliterated",
+      "tag": "qwen3.8-27b-abliterated:q4_K",
+      "bytes": 17741871938,
+      "license": "Apache-2.0",
+      "tier": 4,
+      "minVramGB": 2,
+      "minRamGB": 20,
+      "gpuMinRamGB": 20,
+      "partialOffload": true,
+      "ctx": 32768,
+      "think": true,
+      "freeShell": true,
+      "default": true,
+      "family": "qwen3.8",
+      "parameters": "27.3B",
+      "quant": "Q4_K",
+      "gguf": true,
+      "modelMediaType": "application/vnd.ollama.image.model",
+      "modelDigest": "sha256:6c2c13cef89238c3604d756b07b3ef5fafebbd61095feb8553ff449c95e4c1c6",
+      "modelBytes": 16810714400,
+      "projectorBytes": 931145888,
+      "requires": "0.32.12",
+      "source": "huggingface",
+      "notes": "Unfiltered version of qwen3.8 27B (abliterated by huihui-ai, Apache-2.0): the base model's refusal behaviour is switched off. Same size, quantisation Q4_K and vision projector. Like the MoE model it runs partly offloaded, so it is a GPU candidate from the smallest cards up (minVramGB 2) and needs gpuMinRamGB 20 of system RAM; the 15 tokens/s tier-4 speed test rejects it on slow or small setups and steps down the ladder. Lowest rank, so the official 27B stays the default on large cards. Not in the Ollama registry: the builders download it from Hugging Face (source 'huggingface'). Choose it with 'Run-Headless.ps1 -Model qwen3.8-27b-abliterated:q4_K'."
     },
     {
       "id": "qwen3.6-35b-a3b",

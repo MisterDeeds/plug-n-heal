@@ -101,7 +101,6 @@
   "result.report_missing": "Sorry, I cannot find the report.",
   "result.stopped.isolated": "The IT department of your company has disconnected this computer from the network. This is a safety measure, I will not change it. Please call the IT department of your company.",
   "result.stopped.max_rounds": "I have tried everything I can do safely.",
-  "result.stopped.no_progress": "I did not get any further, so I stopped.",
   "result.stopped.errors": "Several steps did not work, so I stopped.",
   "report.title": "Plug'n'Heal – report",
   "report.date": "Date: {0}",
@@ -165,8 +164,13 @@
   "agent.summary.check": "Check: {0}",
   "agent.summary.words": "Explanation: {0}",
   "agent.summary.guess": "The assistant's guess (not checked): {0}",
-  "agent.summary.malformed": "I stopped because the language model gave no usable answers.",
   "agent.summary.error": "A technical error happened: {0}",
+  "agent.summary.exhausted": "I tried every repair that fits.",
+  "agent.summary.timelimit": "I stopped after {0} minutes.",
+  "agent.summary.cancelled": "You stopped the help.",
+  "agent.keepgoing": "I keep going. Next I try: {0}",
+  "agent.keepgoing.last": "I keep going and check whether anything else could help.",
+  "agent.rediagnose": "It does not work yet. I am examining the computer again.",
   "event.model_says": "The assistant thinks (not checked yet): {0}",
   "cat.display": "Something is wrong with the screen"
 }

@@ -76,10 +76,11 @@ flowchart TD
     H -.->|Nichts mehr zu versuchen| M
 ```
 
-Ein Durchgang endet, wenn die Prüfung bestanden ist, wenn die KI sagt, sie sei fertig, nach 12 Runden, nach
-mehreren Fehlern hintereinander oder wenn ein Befund sagt, dass Reparieren hier falsch wäre (zum Beispiel, wenn
-eine Firma den Computer absichtlich vom Netz getrennt hat). «Gelöst» erscheint nur, wenn das Prüfskript bestanden
-ist.
+Plug'n'Heal macht weiter, bis die Prüfung bestanden ist: Hat ein Schritt nicht geholfen, versucht es den nächsten,
+und im Fenster steht, was es gerade tut. Ein Durchgang endet, wenn die Prüfung bestanden ist, wenn alle passenden
+Schritte versucht sind, nach 30 Runden oder 30 Minuten, nach mehreren Fehlern hintereinander, wenn Sie abbrechen
+oder wenn ein Befund sagt, dass Reparieren hier falsch wäre (zum Beispiel, wenn eine Firma den Computer absichtlich
+vom Netz getrennt hat). «Gelöst» erscheint nur, wenn das Prüfskript bestanden ist.
 
 ## Was Sie brauchen
 
@@ -95,8 +96,8 @@ englisch):
 | Auswahl im Assistenten | KI-Modelle | Gesamt auf der SSD (zeigt der Assistent) | Grösse der SSD | Download |
 |---|---|---|---|---|
 | Klein | 2 kleine Modelle, 5,3 GB | etwa 8,1 GB | ab 16 GB | etwa 6,9 GB |
-| **Standard** (empfohlen) | 4 Modelle, 29,6 GB | etwa 32,4 GB | ab 64 GB | etwa 31,2 GB |
-| Vollständig | 6 Modelle, 62,6 GB | etwa 65,4 GB | ab 128 GB | etwa 64,2 GB |
+| **Standard** (empfohlen) | 5 Modelle, 47,3 GB | etwa 50,1 GB | ab 64 GB | etwa 48,9 GB |
+| Vollständig | 7 Modelle, 80,4 GB | etwa 83,2 GB | ab 128 GB | etwa 82,0 GB |
 
 «Gesamt auf der SSD» heisst: Modelle + das Programm Ollama (entpackt 2,3 GB) + 0,5 GB, die der Assistent frei
 lässt.
@@ -107,7 +108,28 @@ Das machen Sie einmal, an einem PC mit Internet. Die Dateien, die schon auf der 
 Assistent schreibt nur den Ordner `PlugNHeal`, die Datei `START.cmd` und die Datei `README.txt`. Er formatiert
 nie ein Laufwerk.
 
-### Unter Windows
+### In einer Zeile, auf Windows
+
+Wenn die SSD schon exFAT ist, können Sie das Herunterladen und Entpacken überspringen:
+
+```powershell
+irm https://raw.githubusercontent.com/MisterDeeds/plug-n-heal/main/install.ps1 | iex
+```
+
+Das lädt die aktuelle Version von GitHub, fragt nach dem Laufwerksbuchstaben der SSD und baut **Vollständig**
+(alle sieben Modelle, ca. 82 GB Download) als Standard. Alles läuft aus einem Temp-Ordner und wird danach
+wieder entfernt; der Assistent öffnet ein eigenes Fenster. Für ein anderes Profil oder ohne Frage nach dem
+Laufwerk:
+
+```powershell
+$env:PNH_DRIVE = 'E:'; $env:PNH_PROFILE = 'standard'
+irm https://raw.githubusercontent.com/MisterDeeds/plug-n-heal/main/install.ps1 | iex
+```
+
+Wenn der Lauf unterbrochen wird (zum Beispiel weil die Verbindung abbricht), dieselbe Zeile erneut ausführen –
+der Download geht dort weiter, wo er aufgehört hat.
+
+### Unter Windows (Schritt für Schritt)
 
 1. **SSD anstecken.** Sie muss mit exFAT (oder NTFS) formatiert sein. Neue SSDs sind das oft. Wenn nicht, lesen
    Sie [SSD mit exFAT formatieren](#ssd-mit-exfat-formatieren). Beim Formatieren wird alles auf der SSD gelöscht.
@@ -213,6 +235,12 @@ Grafikkarte nicht fast ganz auf sie, versucht es das nächstkleinere Modell.
 | Keine passende Karte (Intel- oder eingebaute Grafik, oder eine Karte unter 4 GB), 12 GB RAM oder mehr | Qwen3.5 4B, auf dem Prozessor | allen |
 | Keine passende Karte, 8 GB RAM | Qwen3.5 2B, auf dem Prozessor | allen |
 | Weniger als 8 GB RAM | trotzdem Qwen3.5 2B, wahrscheinlich zu langsam | allen |
+
+Die Auswahl *Standard* und *Vollständig* enthalten ausserdem die unzensierte Version des 27B
+(`qwen3.8-27b-abliterated`, 17,7 GB; ein Abliteration von huihui-ai, das Abweisungsverhalten des Basismodells ist
+ausgeschaltet). Sie wird nie automatisch gewählt (Community-Anpassung, keine offizielle Freigabe); wer sie will,
+startet mit `Run-Headless.ps1 -Model qwen3.8-27b-abliterated:q4_K` auf einem PC mit genug RAM für den Teil-
+Offload.
 
 Die genaue Regel steht in [docs/MODELS.md](docs/MODELS.md) (englisch). Kleine Modelle sind weniger zuverlässig
 als grosse. Nur die zwei grössten Modelle dürfen eigene (gefilterte) PowerShell-Befehle vorschlagen; die anderen

@@ -507,8 +507,11 @@ Describe 'Ui.ps1 helpers' {
         @{ Reason = 'isolated'; Key = 'result.stopped.isolated' }
         @{ Reason = 'MaxRounds'; Key = 'result.stopped.max_rounds' }
         @{ Reason = 'max-rounds'; Key = 'result.stopped.max_rounds' }
-        @{ Reason = 'no progress'; Key = 'result.stopped.no_progress' }
+        @{ Reason = 'max rounds'; Key = 'result.stopped.max_rounds' }
+        @{ Reason = 'errors'; Key = 'result.stopped.errors' }
         @{ Reason = 'finished'; Key = $null }
+        @{ Reason = 'exhausted'; Key = $null }
+        @{ Reason = 'time-limit'; Key = $null }
         @{ Reason = ''; Key = $null }
         @{ Reason = $null; Key = $null }
     ) {
@@ -552,6 +555,68 @@ Describe 'Ui.ps1 helpers' {
     It 'Format-UiSummary says so when nothing had to be changed' {
         $text = Format-UiSummary -ResultTitle 'R' -ActionLines @() -Computer ''
         $text | Should -Match ([regex]::Escape('- ' + $T['result.actions.none']))
+    }
+}
+
+Describe 'Ui.ps1 working page: what the agent says stays visible (fake controls, no WinForms)' {
+    BeforeAll {
+        $script:PnhFallbackAppDir = $Src
+        $fallback = (Get-TestAssignedValue -Path $UiPs1Path -Variable '$script:UiFallbackLib').Value
+        . ([scriptblock]::Create($fallback))
+        $names = @('Get-UiText', 'Test-UiText', 'Write-UiLog', 'Set-UiSentence', 'Add-UiActivity', 'Receive-UiEvent')
+        foreach ($f in (Get-TestFunctionText -Path $UiPs1Path -Name $names)) { . ([scriptblock]::Create($f)) }
+        $T = $En
+        if ((Get-PnhLanguage) -eq 'de') { $T = $De }
+        function Reset-TestWorkPage {
+            $script:KeepSentence = $false
+            $script:Ui = @{
+                WorkSentence        = [pscustomobject]@{ Text = 'start' }
+                WorkActivityCaption = [pscustomobject]@{ Visible = $false }
+                WorkActivity        = [pscustomobject]@{ Visible = $false; TopIndex = 0; Items = (New-Object System.Collections.ArrayList) }
+            }
+        }
+    }
+
+    BeforeEach { Reset-TestWorkPage }
+
+    It 'an agent message is the big sentence, survives the next thinking event and is kept in the list' {
+        $text = 'I keep going. Next I try: Restart the print service'
+        Receive-UiEvent -Item @{ Type = 'message'; Text = $text; Source = 'agent' }
+        Receive-UiEvent -Item @{ Type = 'thinking'; Round = 2 }
+        $script:Ui.WorkSentence.Text | Should -BeExactly $text -Because 'both events arrive in the same 200 ms tick'
+        @($script:Ui.WorkActivity.Items) | Should -Contain $text
+        $script:Ui.WorkActivity.Visible | Should -BeTrue
+        Receive-UiEvent -Item @{ Type = 'thinking'; Round = 3 }
+        $script:Ui.WorkSentence.Text | Should -BeExactly $T['event.thinking'] -Because 'only the first thinking event after the message leaves it standing'
+    }
+
+    It 'without an agent message the thinking event sets its own sentence' {
+        Receive-UiEvent -Item @{ Type = 'thinking'; Round = 1 }
+        $script:Ui.WorkSentence.Text | Should -BeExactly $T['event.thinking']
+        $script:Ui.WorkActivity.Items.Count | Should -Be 0
+    }
+
+    It 'model text is listed as unchecked and never becomes the big sentence' {
+        Receive-UiEvent -Item @{ Type = 'message'; Text = 'I fixed everything.'; Source = 'model' }
+        $script:Ui.WorkSentence.Text | Should -BeExactly 'start'
+        @($script:Ui.WorkActivity.Items)[0] | Should -BeExactly ($T['event.model_says'] -f 'I fixed everything.')
+        Receive-UiEvent -Item @{ Type = 'thinking'; Round = 2 }
+        $script:Ui.WorkSentence.Text | Should -BeExactly $T['event.thinking']
+    }
+
+    It 'a message without a source is the big sentence only (as before)' {
+        Receive-UiEvent -Item @{ Type = 'message'; Text = 'Hello' }
+        $script:Ui.WorkSentence.Text | Should -BeExactly 'Hello'
+        $script:Ui.WorkActivity.Items.Count | Should -Be 0
+    }
+
+    It 'the same line is not listed twice in a row' {
+        $text = 'I keep going and check whether anything else could help.'
+        Receive-UiEvent -Item @{ Type = 'message'; Text = $text; Source = 'agent' }
+        Receive-UiEvent -Item @{ Type = 'message'; Text = $text; Source = 'agent' }
+        Receive-UiEvent -Item @{ Type = 'message'; Text = 'It does not work yet. I am examining the computer again.'; Source = 'agent' }
+        Receive-UiEvent -Item @{ Type = 'message'; Text = $text; Source = 'agent' }
+        $script:Ui.WorkActivity.Items.Count | Should -Be 3
     }
 }
 

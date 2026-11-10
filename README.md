@@ -86,9 +86,10 @@ flowchart TD
     H -.->|Nothing left to try| M
 ```
 
-A run ends when the check passes, when the AI says it is done, after 12 rounds, after repeated errors, or when a
-finding says that repairing here would be wrong (for example a computer that its company cut off from the
-network). "Solved" is only shown when the check script passed.
+Plug'n'Heal keeps going until the check passes: when a step did not help, it tries the next one, and the window says
+what it is doing. A run ends when the check passes, when every fitting step was tried, after 30 rounds or 30
+minutes, after repeated errors, when you cancel, or when a finding says that repairing here would be wrong (for
+example a computer that its company cut off from the network). "Solved" is only shown when the check script passed.
 
 ## What you need
 
@@ -103,8 +104,8 @@ How much space each choice needs (model sizes are measured, see [docs/MODELS.md]
 | Choice in the builder | AI models | Total on the SSD (the builder shows) | SSD size | Download |
 |---|---|---|---|---|
 | Small | 2 small models, 5.3 GB | about 8.1 GB | 16 GB or more | about 6.9 GB |
-| **Standard** (recommended) | 4 models, 29.6 GB | about 32.4 GB | 64 GB or more | about 31.2 GB |
-| Full | 6 models, 62.6 GB | about 65.4 GB | 128 GB or more | about 64.2 GB |
+| **Standard** (recommended) | 5 models, 47.3 GB | about 50.1 GB | 64 GB or more | about 48.9 GB |
+| Full | 7 models, 80.4 GB | about 83.2 GB | 128 GB or more | about 82.0 GB |
 
 "Total on the SSD" is models + the Ollama runtime (2.3 GB unpacked) + 0.5 GB that the builder keeps free.
 
@@ -113,7 +114,27 @@ How much space each choice needs (model sizes are measured, see [docs/MODELS.md]
 You do this once, on a PC with internet. It is safe for the files already on the SSD: the builder only writes
 the folder `PlugNHeal`, the file `START.cmd` and the file `README.txt`. It never formats a drive.
 
-### On Windows
+### One line, on Windows
+
+If the SSD is already exFAT, you can skip the download and unzip:
+
+```powershell
+irm https://raw.githubusercontent.com/MisterDeeds/plug-n-heal/main/install.ps1 | iex
+```
+
+It downloads the current version from GitHub, asks for the SSD's drive letter, and builds **Full** (all seven
+models, about 82 GB of download) by default. Everything works from a temp folder and is deleted afterwards;
+the builder itself runs in its own window. To build a different profile or to skip the question about the
+drive letter:
+
+```powershell
+$env:PNH_DRIVE = 'E:'; $env:PNH_PROFILE = 'standard'
+irm https://raw.githubusercontent.com/MisterDeeds/plug-n-heal/main/install.ps1 | iex
+```
+
+If the build stops (for example the connection drops), run the same line again – it resumes where it stopped.
+
+### On Windows (step by step)
 
 1. **Plug in the SSD.** It must be formatted with exFAT (or NTFS). New SSDs often are. If not, see
    [Format the SSD with exFAT](docs/BUILDING.md#2-format-the-ssd-with-exfat). Formatting erases the SSD.
@@ -237,6 +258,11 @@ must fit into it. Without such a card only the two small models are used, and th
 most RAM minus 4 GB. Intel and built-in graphics are treated as "no card" for now. Details:
 [docs/MODELS.md](docs/MODELS.md).
 
+The *Standard* and *Full* choices also carry the unfiltered version of the 27B (`qwen3.8-27b-abliterated`, 17.7 GB,
+an abliteration by huihui-ai: the base model's refusal behaviour is switched off). It is never picked automatically
+(it is a community modification, not an official release); use it with `Run-Headless.ps1 -Model
+qwen3.8-27b-abliterated:q4_K` on a PC with enough RAM for the partial offload.
+
 Small models are less reliable than large ones. Only the two largest models may propose their own (filtered)
 PowerShell commands; the others can only use the catalogue.
 
@@ -348,12 +374,13 @@ builder), and report false alarms.
 
 | Path | Content |
 |---|---|
+| `install.ps1` | One-line builder for Windows: `irm ... | iex` downloads the repo from GitHub and builds the SSD |
 | `BUILD.cmd`, `builder/` | Builder: Windows wizard `Build-Drive.ps1`, Linux/macOS `build-drive.sh`, pinned runtime `versions.json` |
 | `src/` | Copied to the drive as `PlugNHeal\app\`: `START.cmd`, `Start.ps1`, `Ui.ps1` (WinForms), `Run-Headless.ps1` |
 | `src/lib/` | `Common`, `Hardware`, `Models`, `Ollama`, `Diagnose`, `Toolbox`, `Agent` |
 | `src/catalog/models.json` | Model ladder and profiles |
 | `src/toolbox/` | `actions.json` (92 actions), `findings.json` (63 finding codes), `categories.json`, `helpers.ps1` |
-| `src/i18n/`, `src/prompts/` | All user-visible text in German and English, system prompts |
+| `src/i18n/`, `src/prompts/` | All user-visible text in German and English; the system prompt (English for every language) |
 | `tests/` | Pester 5 tests, run on Windows PowerShell 5.1 and PowerShell 7 |
 | `docs/` | [ARCHITECTURE](docs/ARCHITECTURE.md), [SAFETY](docs/SAFETY.md), [TOOLBOX](docs/TOOLBOX.md), [MODELS](docs/MODELS.md), [BUILDING](docs/BUILDING.md), [TESTING](docs/TESTING.md), [research notes](docs/research/) (German) |
 

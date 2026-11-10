@@ -269,8 +269,8 @@ Describe 'Model catalogue and profiles' {
     }
     It 'wizard choice <Name> with the real catalogue: about <Total> GB on the drive, SSD <Gb> GB, adds <Added>' -TestCases @(
         @{ Name = 'small'; Total = '8.1'; Gb = 16; Added = '5.3 GB'; Says = '2B' }
-        @{ Name = 'standard'; Total = '32.4'; Gb = 64; Added = '24.3 GB'; Says = '24 GB' }
-        @{ Name = 'full'; Total = '65.4'; Gb = 128; Added = '33.1 GB'; Says = '16 or 20 GB' }
+        @{ Name = 'standard'; Total = '50.1'; Gb = 64; Added = '42.0 GB'; Says = '24 GB' }
+        @{ Name = 'full'; Total = '83.2'; Gb = 128; Added = '33.1 GB'; Says = '16 or 20 GB' }
     ) {
         $real = [System.IO.Path]::Combine($PSScriptRoot, '..', 'src', 'catalog', 'models.json')
         $rc = Read-PnhBuildCatalog -Path $real
@@ -280,7 +280,7 @@ Describe 'Model catalogue and profiles' {
         Format-PnhBytes $o.DriveBytes | Should -Be ($Total + ' GB')
         $o.DriveGB | Should -Be $Gb
         $o.Title | Should -Match ([regex]::Escape($Total + ' GB'))
-        $o.Text | Should -Match ([regex]::Escape('(' + $Added))
+        $o.Text | Should -Match ([regex]::Escape($Added))
         $o.Text | Should -Match ([regex]::Escape($Says))
         $o.Text | Should -Match ([regex]::Escape('SSD of ' + $Gb + ' GB'))
         $o.Text | Should -Not -Match '\{\d\}'

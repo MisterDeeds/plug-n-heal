@@ -1,12 +1,14 @@
 # Building a Plug'n'Heal drive
 
-The builder turns an empty external SSD into a Plug'n'Heal drive that later works without internet. There are two
-builders with the same result on the drive:
+The builder turns an empty external SSD into a Plug'n'Heal drive that later works without internet. There are
+two builders with the same result on the drive; on Windows there is also the one-line entry point
+`install.ps1` (README, "One line, on Windows"), which downloads the current version from GitHub and runs
+the Windows builder with `-NonInteractive`.
 
 | Builder | Runs on | Start | How it gets the models |
 |---|---|---|---|
-| `builder/Build-Drive.ps1` | Windows 10/11 (Windows PowerShell 5.1) | double-click `BUILD.cmd` (wizard) or `BUILD.cmd -NonInteractive ...` | starts Ollama from the drive and lets it pull each model (`POST /api/pull`) |
-| `builder/build-drive.sh` | Linux, macOS (bash, curl, python3) | `./builder/build-drive.sh <target> [profile]` | downloads manifest and blobs straight from `registry.ollama.ai`, no Ollama needed |
+| `builder/Build-Drive.ps1` | Windows 10/11 (Windows PowerShell 5.1) | double-click `BUILD.cmd` (wizard) or `BUILD.cmd -NonInteractive ...` | starts Ollama from the drive and lets it pull each model (`POST /api/pull`); models that are not in the Ollama registry are downloaded from Hugging Face (pinned in `builder/hf-models.json`) |
+| `builder/build-drive.sh` | Linux, macOS (bash, curl, python3) | `./builder/build-drive.sh <target> [profile]` | downloads manifest and blobs straight from `registry.ollama.ai`, no Ollama needed; models that are not in the Ollama registry are downloaded from Hugging Face (pinned in `builder/hf-models.json`) |
 
 The step-by-step guide for laypeople is in the [README](../README.md#build-your-plugnheal-drive). This page has the
 details. The contract is [ARCHITECTURE.md](ARCHITECTURE.md) sections 3.2 and 5.9.
@@ -20,8 +22,8 @@ details. The contract is [ARCHITECTURE.md](ARCHITECTURE.md) sections 3.2 and 5.9
 | Profile | Models | Download | Needed on the drive | Suggested SSD |
 |---|---|---|---|---|
 | `small` | `qwen3.5:2b`, `qwen3.5:4b` | about 6.9 GB | about 8.1 GB | 16 GB |
-| `standard` (default) | + `qwen3.5:9b`, `qwen3.8:27b` | about 31.2 GB | about 32.4 GB | 64 GB |
-| `full` | + `qwen3.5:9b-q8_0`, `qwen3.6:35b-a3b` | about 64.2 GB | about 65.4 GB | 128 GB |
+| `standard` (default) | + `qwen3.5:9b`, `qwen3.8:27b`, `qwen3.8-27b-abliterated` | about 48.9 GB | about 50.1 GB | 64 GB |
+| `full` | + `qwen3.5:9b-q8_0`, `qwen3.6:35b-a3b` | about 82.0 GB | about 83.2 GB | 128 GB |
 
 "Needed on the drive" = models + unpacked runtime (2.26 GB) + a reserve of 512 MiB. While the runtime is being
 installed, its ZIP (1.6 GB) is also on the drive for a short time; the space check includes it. Model details:
@@ -115,7 +117,10 @@ cancelled.
 1. **Checks:** `builder/versions.json` and `src/catalog/models.json` are valid; the drive is not the Windows drive,
    is ready and uses exFAT or NTFS.
 2. **Model sizes:** fetches each model's manifest from the registry and refuses to build when the size differs from
-   the catalogue by more than 1 % ("Please use a newer Plug'n'Heal version").
+   the catalogue by more than 1 % ("Please use a newer Plug'n'Heal version"). A model with `"source": "huggingface"`
+   is not in the registry: its files are pinned by size and SHA-256 in `builder/hf-models.json`, and the builder
+   builds the manifest from the pin (the pinned metadata blobs in `builder/hf-models/` must match the pin, or the
+   build is refused with exit code 2).
 3. **Space:** remaining runtime download + unpacked runtime + missing model blobs (minus partial downloads already on
    the drive) + 512 MiB must fit into the free space.
 4. **Runtime:** downloads the pinned `ollama-windows-amd64.zip` with `curl.exe` into `PlugNHeal\downloads\`. Every
@@ -128,7 +133,8 @@ cancelled.
    ZIP was not unblocked; exFAT cannot store the mark, so there it changes nothing. A failure is logged, never fatal.
 6. **Models:** starts `ollama.exe serve` from the drive on `127.0.0.1` with `OLLAMA_MODELS` on the drive and
    `OLLAMA_NOPRUNE=1`, and pulls every missing model. Ollama resumes interrupted downloads and verifies each blob's
-   digest.
+   digest. The Hugging Face models are downloaded straight from the pinned URLs (resume, SHA-256), and their
+   manifest is written into `models/manifests/` afterwards.
 7. **Verification:** every blob of every manifest must be present with the size the manifest states.
 8. **Finish:** writes the licences, `drive.json` and `README.txt`, and removes the empty `downloads` folder.
 
@@ -159,6 +165,11 @@ blobs straight from `registry.ollama.ai` with `curl -C -`, checks the SHA-256 of
 `models/blobs/`, and writes the manifests last, unchanged, to
 `models/manifests/registry.ollama.ai/library/<name>/<tag>`. This is the layout Ollama 0.40.15 reads offline. The
 file system check refuses FAT32 and warns about anything that is not exFAT or NTFS.
+
+A model with `"source": "huggingface"` is handled the same way: its manifest is built from the pin
+(`builder/hf-models.json`), the small Ollama metadata blobs are copied from `builder/hf-models/`, and the
+GGUF files are downloaded from the pinned Hugging Face URLs (resume, SHA-256; the SHA-256 is the repository's
+Git-LFS object id, so the download is verified by its content).
 
 `build-drive.sh` has no automated tests yet and has not been tried on macOS. Please report how it went.
 

@@ -101,7 +101,6 @@
   "result.report_missing": "Den Bericht finde ich leider nicht.",
   "result.stopped.isolated": "Die Informatik Ihrer Firma hat diesen Computer vom Netz getrennt. Das ist eine Schutzmassnahme, daran ändere ich nichts. Bitte rufen Sie die Informatik Ihrer Firma an.",
   "result.stopped.max_rounds": "Ich habe alles versucht, was ich gefahrlos machen kann.",
-  "result.stopped.no_progress": "Ich bin nicht weitergekommen und habe deshalb aufgehört.",
   "result.stopped.errors": "Mehrere Schritte haben nicht geklappt, deshalb habe ich aufgehört.",
   "report.title": "Plug'n'Heal – Bericht",
   "report.date": "Datum: {0}",
@@ -165,8 +164,13 @@
   "agent.summary.check": "Prüfung: {0}",
   "agent.summary.words": "Erklärung: {0}",
   "agent.summary.guess": "Vermutung des Assistenten (nicht geprüft): {0}",
-  "agent.summary.malformed": "Ich habe aufgehört, weil das Sprachmodell keine brauchbaren Antworten mehr gab.",
   "agent.summary.error": "Es ist ein technischer Fehler aufgetreten: {0}",
+  "agent.summary.exhausted": "Ich habe alle passenden Reparaturen versucht.",
+  "agent.summary.timelimit": "Ich habe nach {0} Minuten aufgehört.",
+  "agent.summary.cancelled": "Sie haben die Hilfe abgebrochen.",
+  "agent.keepgoing": "Ich mache weiter. Als Nächstes versuche ich: {0}",
+  "agent.keepgoing.last": "Ich mache weiter und schaue, ob noch etwas anderes hilft.",
+  "agent.rediagnose": "Es geht noch nicht. Ich untersuche den Computer noch einmal.",
   "event.model_says": "Der Assistent meint (noch nicht geprüft): {0}",
   "cat.display": "Mit dem Bildschirm stimmt etwas nicht"
 }

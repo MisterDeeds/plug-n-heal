@@ -1,0 +1,19 @@
+{
+  "schema": 1,
+  "comment": "Pinned sources for catalogue models with \"source\": \"huggingface\" (src/catalog/models.json). Those models are not in the Ollama registry, so the builders download the GGUF files from Hugging Face (blobs with source \"hf\") and copy the small Ollama metadata blobs from this repository (blobs with source \"repo\"), then write an Ollama-style manifest themselves - byte-for-byte in the shape registry.ollama.ai uses, so Ollama 0.40.15 reads the model offline. The sha256 of every \"hf\" file equals its Hugging Face Git-LFS object id, so a download is verified by its content, not by the server. The \"repo\" blobs are byte-identical to the Ollama registry layers of the Qwen models (same digests where they match), so a drive holding the official and this model stores each of them only once. One entry per model tag; the builders pick the entry by the catalogue tag.",
+  "models": {
+    "qwen3.8-27b-abliterated:q4_K": {
+      "repo": "huihui-ai/Huihui-Qwen3.8-27B-abliterated-GGUF",
+      "revision": "1c69098e9c32db6dc06fc48f1d6cc75ad07da89e",
+      "baseUrl": "https://huggingface.co",
+      "measured": "2026-11-10: revision is the repository HEAD sha; sizes and LFS oids (sha256) come from the Hugging Face API tree listing of that revision. The three \"repo\" blob digests are measured from the files in builder/hf-models/; params and license match the Ollama registry layers of the Qwen models, config is the registry config of qwen3.8:27b with file_type Q4_K.",
+      "blobs": [
+        { "role": "projector", "source": "hf", "name": "mmproj-model-bf16.gguf", "sha256": "c9a09064683620bea3d3bfed5d4462e1a97a7d2fff7e5045d6862a0a85eeb5b5", "size": 931145888 },
+        { "role": "model", "source": "hf", "name": "Huihui-Qwen3.8-27B-abliterated-Q4_K.gguf", "sha256": "6c2c13cef89238c3604d756b07b3ef5fafebbd61095feb8553ff449c95e4c1c6", "size": 16810714400 },
+        { "role": "license", "source": "repo", "file": "hf-models/apache-2.0.txt", "sha256": "4c6a8e842ef0d8504549facfb03f1273a8d0022991519bc1888522cc1a5517d1", "size": 11345 },
+        { "role": "params", "source": "repo", "file": "hf-models/params.json", "sha256": "448d29437397713495b408d51b4ccbc5ba95240a7583643efb2304921950b111", "size": 92 },
+        { "role": "config", "source": "repo", "file": "hf-models/config.json", "sha256": "fd70fd02511c6a4d7f4ee87a51ef72800569fe0b76ea73c4c48ed9876f31b443", "size": 213 }
+      ]
+    }
+  }
+}

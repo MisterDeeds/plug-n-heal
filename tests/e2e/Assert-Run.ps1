@@ -41,7 +41,8 @@
 .PARAMETER OutDir
     Folder for the evidence. Default: <repo>\TestResults\e2e.
 .PARAMETER TimeoutMinutes
-    Limit for one headless run (default 20). The process tree is killed when it is reached.
+    Limit for one headless run (default 20). The process tree is killed when it is reached. Run-Headless.ps1 gets
+    -MaxMinutes 5 less (at least 1), so the agent normally stops on its own first and still writes its report.
 .PARAMETER MaxDiagnoseSeconds
     Limit for the diagnose scenario (default 60).
 .PARAMETER PowerShellPath
@@ -399,6 +400,8 @@ foreach ($lib in @('Common', 'Hardware', 'Models', 'Ollama', 'Diagnose', 'Toolbo
 $headlessArgs = @()
 if ($Model) { $headlessArgs += @('-Model', $Model) }
 $headlessArgs += @('-Language', 'en', '-Json')
+# The agent's own wall-clock limit ends a slow run with a report before this script kills the process.
+$headlessArgs += @('-MaxMinutes', [string][Math]::Max(1, $TimeoutMinutes - 5))
 
 # ---------------------------------------------------------------------------------------------------------------------
 # Scenarios
@@ -449,7 +452,7 @@ switch ($Scenario) {
         $result = ConvertFrom-PnhE2eResultJson -Text $run.StdOut
         Add-PnhE2eCheck -Name 'stdout is the JSON result' -Ok ($null -ne $result)
         if ($result) {
-            Add-PnhE2eCheck -Name 'JSON: solved = true and exitCode = 0' -Ok ((Get-PnhE2eMember $result 'solved') -eq $true -and [int](Get-PnhE2eMember $result 'exitCode') -eq 0) -Detail ('stoppedReason {0}, rounds {1}, model {2}, error {3}' -f (Get-PnhE2eMember $result 'stoppedReason'), (Get-PnhE2eMember $result 'rounds'), (Get-PnhE2eMember $result 'model'), (Get-PnhE2eMember $result 'error'))
+            Add-PnhE2eCheck -Name 'JSON: solved = true and exitCode = 0' -Ok ((Get-PnhE2eMember $result 'solved') -eq $true -and [int](Get-PnhE2eMember $result 'exitCode') -eq 0) -Detail ('stoppedReason {0}, rounds {1}, nudges {2}, model {3}, error {4}' -f (Get-PnhE2eMember $result 'stoppedReason'), (Get-PnhE2eMember $result 'rounds'), (Get-PnhE2eMember $result 'nudges'), (Get-PnhE2eMember $result 'model'), (Get-PnhE2eMember $result 'error'))
         }
         $deadline = (Get-Date).AddSeconds(30)
         $svc = Get-Service -Name Spooler
@@ -499,7 +502,7 @@ switch ($Scenario) {
         $result = ConvertFrom-PnhE2eResultJson -Text $run.StdOut
         Add-PnhE2eCheck -Name 'stdout is the JSON result' -Ok ($null -ne $result)
         if ($result) {
-            Add-PnhE2eCheck -Name 'JSON: readOnly = true and exitCode matches the process' -Ok ((Get-PnhE2eMember $result 'readOnly') -eq $true -and [string](Get-PnhE2eMember $result 'exitCode') -eq [string]$run.ExitCode) -Detail ('solved {0}, stoppedReason {1}, rounds {2}, wouldHelp: {3}' -f (Get-PnhE2eMember $result 'solved'), (Get-PnhE2eMember $result 'stoppedReason'), (Get-PnhE2eMember $result 'rounds'), (@(Get-PnhE2eMember $result 'wouldHelp') -join '; '))
+            Add-PnhE2eCheck -Name 'JSON: readOnly = true and exitCode matches the process' -Ok ((Get-PnhE2eMember $result 'readOnly') -eq $true -and [string](Get-PnhE2eMember $result 'exitCode') -eq [string]$run.ExitCode) -Detail ('solved {0}, stoppedReason {1}, rounds {2}, nudges {3}, wouldHelp: {4}' -f (Get-PnhE2eMember $result 'solved'), (Get-PnhE2eMember $result 'stoppedReason'), (Get-PnhE2eMember $result 'rounds'), (Get-PnhE2eMember $result 'nudges'), (@(Get-PnhE2eMember $result 'wouldHelp') -join '; '))
         }
 
         $changing = Get-PnhE2eChangeMap

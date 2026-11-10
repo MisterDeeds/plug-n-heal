@@ -87,6 +87,7 @@ $script:CurrentPage = ''
 $script:PrepRows = [ordered]@{}
 $script:WorkRows = [ordered]@{}
 $script:ActionTitles = @{}
+$script:KeepSentence = $false
 $script:CategoryId = ''
 $script:CategoryTitle = ''
 $script:UserText = ''
@@ -269,7 +270,8 @@ function Get-UiResultKind {
 function Get-UiStoppedKey {
     <#
     .SYNOPSIS
-        Maps the agent's StoppedReason ('isolated', 'MaxRounds', 'no-progress' ...) to result.stopped.<x>.
+        Maps the agent's StoppedReason ('isolated', 'max-rounds', 'errors' ...) to result.stopped.<x>, if that text
+        exists. The other reasons (finished, exhausted, time-limit ...) are explained in the agent's summary.
     #>
     param(
         [AllowNull()][object]$Reason,
@@ -490,8 +492,8 @@ $script:JobScript = {
         }
         function Invoke-PnhAgent {
             param([object]$Server, [object]$ModelEntry, [string]$Category, [string]$UserText, [string]$RunFolder,
-                [scriptblock]$OnEvent, [scriptblock]$Confirm, [int]$MaxRounds = 12, [string]$Language = 'en')
-            $null = $Server, $ModelEntry, $Category, $UserText, $RunFolder, $MaxRounds, $Language
+                [scriptblock]$OnEvent, [scriptblock]$Confirm, [int]$MaxRounds = 30, [int]$MaxMinutes = 30, [string]$Language = 'en')
+            $null = $Server, $ModelEntry, $Category, $UserText, $RunFolder, $MaxRounds, $MaxMinutes, $Language
             & $OnEvent @{ Type = 'step-start'; Key = 'step.diagnose'; Text = (Get-PnhText -Key 'step.diagnose') }
             Wait-Demo 2500
             & $OnEvent @{ Type = 'step-done'; Key = 'step.diagnose'; Ok = $true }
@@ -1218,6 +1220,7 @@ function Invoke-UiAgent {
         Add-UiStep -List $script:Ui.WorkSteps -Rows $script:WorkRows -Key $k -Text (Get-UiText -Key $k)
     }
     $script:Ui.WorkSentence.Text = Get-UiText -Key 'ui.work.starting'
+    $script:KeepSentence = $false
     $script:Ui.WorkActivity.Items.Clear()
     $script:Ui.WorkActivityCaption.Visible = $false
     $script:Ui.WorkActivity.Visible = $false
@@ -1235,6 +1238,10 @@ function Write-UiStepCounter {
 function Add-UiActivity {
     param([string]$Text)
     if (-not $Text) { return }
+    # The same line twice in a row says nothing new (a skipped step and the agent's sentence about it, a repeated
+    # "I keep going").
+    $count = $script:Ui.WorkActivity.Items.Count
+    if ($count -gt 0 -and [string]$script:Ui.WorkActivity.Items[$count - 1] -ceq $Text) { return }
     $script:Ui.WorkActivityCaption.Visible = $true
     $script:Ui.WorkActivity.Visible = $true
     $null = $script:Ui.WorkActivity.Items.Add($Text)
@@ -1242,11 +1249,17 @@ function Add-UiActivity {
 }
 
 function Set-UiSentence {
+    <#
+    .SYNOPSIS
+        The big sentence of the working page. With -Keep the next 'thinking' event leaves it standing (what the
+        agent announced stays readable while the model thinks); any other sentence replaces it as usual.
+    #>
     [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '', Justification = 'Changes a label only')]
-    param([string]$Text)
+    param([string]$Text, [switch]$Keep)
     if (-not $Text) { return }
     if ($Text.Length -gt 400) { $Text = $Text.Substring(0, 400) + ' ...' }
     $script:Ui.WorkSentence.Text = $Text
+    $script:KeepSentence = [bool]$Keep
 }
 
 function Receive-UiConfirm {
@@ -1311,7 +1324,10 @@ function Receive-UiEvent {
             Write-UiStepState -Rows $script:WorkRows -Key ([string]$Item.Key) -State $state
             Write-UiStepCounter
         }
-        'thinking' { Set-UiSentence (Get-UiText -Key 'event.thinking') }
+        'thinking' {
+            # What the agent itself just announced ("I keep going. Next I try: ...") stays while the model thinks.
+            if ($script:KeepSentence) { $script:KeepSentence = $false } else { Set-UiSentence (Get-UiText -Key 'event.thinking') }
+        }
         'action' {
             $title = [string]$Item.Title
             if (-not $title) { $title = [string]$Item.Id }
@@ -1326,10 +1342,15 @@ function Receive-UiEvent {
         }
         'message' {
             # Text from the language model is unverified (it may claim things it did not do) - label it as such.
+            # Text from the agent itself (Source 'agent': why it goes on, what it tries next) is the big sentence,
+            # stays there while the model thinks, and is kept in the list so that it never just flashes by.
             $msgSource = $null
             if ($Item -is [System.Collections.IDictionary] -and $Item.Contains('Source')) { $msgSource = [string]$Item['Source'] }
             if ($msgSource -eq 'model') {
                 Add-UiActivity (Get-UiText -Key 'event.model_says' -Arguments @([string]$Item.Text))
+            } elseif ($msgSource -eq 'agent') {
+                Set-UiSentence ([string]$Item.Text) -Keep
+                Add-UiActivity ([string]$Item.Text)
             } else {
                 Set-UiSentence ([string]$Item.Text)
             }

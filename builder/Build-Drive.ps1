@@ -80,7 +80,7 @@ $script:PnhBuildText = @{
         'profile.small'       = 'Klein, etwa {0}'
         'profile.small.text'  = 'Die zwei kleinen Modelle 2B und 4B ({1}). Genügt für PCs ohne eigene Grafikkarte und für Grafikkarten bis 8 GB. Mit einer grösseren Grafikkarte läuft dann auch nur das 4B. Braucht eine SSD ab {0} GB.'
         'profile.standard'    = 'Standard, etwa {0} (empfohlen)'
-        'profile.standard.text' = 'Wie «Klein», dazu 9B für Grafikkarten ab 10 GB und 27B für Grafikkarten ab 24 GB ({1} mehr). Passt für fast jeden PC. Braucht eine SSD ab {0} GB.'
+        'profile.standard.text' = 'Wie «Klein», dazu 9B für Grafikkarten ab 10 GB, das 27B und seine unzensierte Version (beide laufen auf kleineren Grafikkarten teils im Arbeitsspeicher; ist das zu langsam, wird automatisch ein kleineres Modell benutzt, {1} mehr). Passt für fast jeden PC. Braucht eine SSD ab {0} GB.'
         'profile.full'        = 'Vollständig, etwa {0}'
         'profile.full.text'   = 'Wie «Standard», dazu zwei Modelle ({1} mehr), die nur PCs mit einer Grafikkarte mit 16 oder 20 GB nützen: das 9B in höherer Genauigkeit und ein schnelles Modell, das zusätzlich 32 GB Arbeitsspeicher braucht. Braucht eine SSD ab {0} GB.'
         'profile.free'        = 'Auf der SSD {0} sind {1} frei.'
@@ -100,6 +100,7 @@ $script:PnhBuildText = @{
         'phase.extract'       = 'Entpacke das Programm auf die SSD ...'
         'phase.app'           = "Kopiere Plug'n'Heal auf die SSD ..."
         'phase.ollama'        = 'Starte Ollama von der SSD ...'
+        'phase.hf'            = 'Lade die Sprachmodelldatei {0} von Hugging Face ...'
         'phase.model'         = 'Lade Sprachmodell {0} ({1} von {2}) ...'
         'phase.verifyModels'  = 'Prüfe die Sprachmodelle ...'
         'phase.finish'        = 'Schreibe Lizenzen und Anleitung ...'
@@ -129,6 +130,8 @@ $script:PnhBuildText = @{
         'err.space'           = 'Auf der SSD ist zu wenig Platz: nötig sind {0}, frei sind {1}. Bitte eine kleinere Auswahl oder eine grössere SSD nehmen.'
         'err.sizeMismatch'    = 'Die Grösse von {0} passt nicht zur Modellliste (Liste {1}, Server {2}). Bitte eine neuere Plug''n''Heal-Version verwenden.'
         'err.registry'        = 'Der Modellserver ist nicht erreichbar ({0}). Ist der PC mit dem Internet verbunden?'
+        'err.hf'              = 'Der Modellserver (Hugging Face) ist nicht erreichbar ({0}). Ist der PC mit dem Internet verbunden?'
+        'err.hfPin'           = 'Die Quelldaten für das Modell {0} fehlen oder sind beschädigt: {1}. Bitte die vollständige Plug''n''Heal-Version verwenden.'
         'err.download'        = 'Der Download ist nach {0} Versuchen gescheitert: {1}'
         'err.hash'            = 'Die heruntergeladene Datei ist beschädigt (Prüfsumme falsch): {0}'
         'err.extract'         = 'Entpacken gescheitert: {0}'
@@ -164,7 +167,7 @@ $script:PnhBuildText = @{
         'profile.small'       = 'Small, about {0}'
         'profile.small.text'  = 'The two small models, 2B and 4B ({1}). Enough for PCs without their own graphics card and for graphics cards up to 8 GB. A larger graphics card then also runs only the 4B. Needs an SSD of {0} GB or more.'
         'profile.standard'    = 'Standard, about {0} (recommended)'
-        'profile.standard.text' = 'Like "Small", plus 9B for graphics cards from 10 GB and 27B for graphics cards with 24 GB or more ({1} more). Right for almost every PC. Needs an SSD of {0} GB or more.'
+        'profile.standard.text' = 'Like "Small", plus 9B for cards from 10 GB, the 27B (24 GB cards) and its unfiltered version (partly in memory on smaller cards; if that is too slow a smaller model is used, {1} more). Right for almost every PC. Needs an SSD of {0} GB or more.'
         'profile.full'        = 'Full, about {0}'
         'profile.full.text'   = 'Like "Standard", plus two models ({1} more) that only help PCs with a 16 or 20 GB graphics card: the 9B in higher precision, and a fast model that also needs 32 GB of RAM. Needs an SSD of {0} GB or more.'
         'profile.free'        = 'The SSD {0} has {1} free.'
@@ -184,6 +187,7 @@ $script:PnhBuildText = @{
         'phase.extract'       = 'Unpacking the program onto the SSD ...'
         'phase.app'           = "Copying Plug'n'Heal onto the SSD ..."
         'phase.ollama'        = 'Starting Ollama from the SSD ...'
+        'phase.hf'            = 'Downloading the language model file {0} from Hugging Face ...'
         'phase.model'         = 'Downloading language model {0} ({1} of {2}) ...'
         'phase.verifyModels'  = 'Checking the language models ...'
         'phase.finish'        = 'Writing licences and instructions ...'
@@ -213,6 +217,8 @@ $script:PnhBuildText = @{
         'err.space'           = 'Not enough space on the SSD: {0} needed, {1} free. Please pick a smaller choice or a larger SSD.'
         'err.sizeMismatch'    = 'The size of {0} does not match the model list (list {1}, server {2}). Please use a newer Plug''n''Heal version.'
         'err.registry'        = 'The model server cannot be reached ({0}). Is the PC connected to the internet?'
+        'err.hf'              = 'The model server (Hugging Face) cannot be reached ({0}). Is the PC connected to the internet?'
+        'err.hfPin'           = 'The source data for the model {0} is missing or damaged: {1}. Please use the complete Plug''n''Heal version.'
         'err.download'        = 'The download failed after {0} attempts: {1}'
         'err.hash'            = 'The downloaded file is damaged (wrong checksum): {0}'
         'err.extract'         = 'Unpacking failed: {0}'
@@ -283,7 +289,7 @@ function Get-PnhErrorText {
 function Get-PnhExitCode {
     param([string]$Code)
     if ($Code -eq 'cancelled') { return 3 }
-    if ($Code -in @('fat', 'fs', 'space', 'systemDrive', 'catalog', 'profile', 'src', 'noDrive', 'sizeMismatch', 'usage', 'versions')) { return 2 }
+    if ($Code -in @('fat', 'fs', 'space', 'systemDrive', 'catalog', 'profile', 'src', 'noDrive', 'sizeMismatch', 'usage', 'versions', 'hfPin')) { return 2 }
     return 1
 }
 
@@ -1124,6 +1130,170 @@ function Get-PnhRegistryManifest {
     throw (New-PnhBuildError -Code 'registry' -Message (Get-PnhBuildText 'err.registry' @("$Tag, $last")))
 }
 
+function Get-PnhValue {
+    # Read a key or property from a hashtable or object without failing (the builder is not part of src\, so it
+    # carries its own copy of the helper instead of loading src\lib\Common.ps1).
+    param([AllowNull()][object]$InputObject, [Parameter(Mandatory)][string]$Name, [AllowNull()][object]$Default = $null)
+    if ($null -eq $InputObject) { return $Default }
+    if ($InputObject -is [System.Collections.IDictionary]) {
+        if ($InputObject.Contains($Name)) { return $InputObject[$Name] }
+        return $Default
+    }
+    $prop = $InputObject.PSObject.Properties[$Name]
+    if ($null -eq $prop) { return $Default }
+    try { return $prop.Value } catch { return $Default }
+}
+
+# ---------------------------------------------------------------------------------------------------------------------
+# Hugging Face models (catalogue entries with source 'huggingface')
+#
+# Those models are not in the Ollama registry. The builder downloads their GGUF files from Hugging Face and
+# copies the small Ollama metadata blobs (config, params, license) from the pinned files in this repository,
+# then writes the Ollama-style manifest itself. The layout is byte-for-byte what a registry pull produces, so
+# Ollama reads the model offline afterwards. builder\hf-models.json pins every file by sha256 and size; for the
+# Hugging Face files the sha256 is the repository's Git-LFS object id, so a download is verified by content.
+# ---------------------------------------------------------------------------------------------------------------------
+function Read-PnhHfPins {
+    # -> parsed builder\hf-models.json; throws 'hfPin' when it is missing or broken
+    param([string]$Path)
+    if (-not $Path) { $Path = [System.IO.Path]::Combine($script:PnhBuilderRoot, 'hf-models.json') }
+    try {
+        $v = Read-PnhJsonFile -Path $Path
+        if ($null -eq (Get-PnhValue $v 'models')) { throw 'models' }
+        return $v
+    } catch {
+        throw (New-PnhBuildError -Code 'hfPin' -Message (Get-PnhBuildText 'err.hfPin' @('$Path', $_.Exception.Message)))
+    }
+}
+
+function Get-PnhHfModelPin {
+    # the pin entry (blobs, repo, revision, baseUrl) of one model; throws 'hfPin' when the tag has no pin
+    param([Parameter(Mandatory)]$PinFile, [Parameter(Mandatory)][string]$Tag)
+    $entry = Get-PnhValue (Get-PnhValue $PinFile 'models') $Tag
+    if ($null -eq $entry -or $null -eq (Get-PnhValue $entry 'blobs')) {
+        throw (New-PnhBuildError -Code 'hfPin' -Message (Get-PnhBuildText 'err.hfPin' @($Tag, 'no pin in builder\hf-models.json')))
+    }
+    return $entry
+}
+
+function Get-PnhHfBlobPath {
+    # 'hf-models/params.json' from the pin file, relative to the builder root
+    param([Parameter(Mandatory)][string]$File)
+    return [System.IO.Path]::Combine($script:PnhBuilderRoot, ($File.Replace('/', [System.IO.Path]::DirectorySeparatorChar)))
+}
+
+function Get-PnhHfUrl {
+    param([Parameter(Mandatory)]$Pin, [Parameter(Mandatory)][string]$Name)
+    $base = [string](Get-PnhValue $Pin 'baseUrl')
+    if (-not $base) { $base = 'https://huggingface.co' }
+    $repo = [string](Get-PnhValue $Pin 'repo')
+    $rev = [string](Get-PnhValue $Pin 'revision')
+    if (-not $repo -or -not $rev) {
+        throw (New-PnhBuildError -Code 'hfPin' -Message (Get-PnhBuildText 'err.hfPin' @($repo, 'repo/revision missing')))
+    }
+    return ('{0}/{1}/resolve/{2}/{3}' -f $base.TrimEnd('/'), $repo, $rev, $Name)
+}
+
+function New-PnhHfManifest {
+    # Ollama-style manifest for the pinned blobs; layer order like registry.ollama.ai (projector, model, license, params)
+    param([Parameter(Mandatory)]$Pin)
+    $blobs = @(Get-PnhValue $Pin 'blobs' @())
+    if ($blobs.Count -eq 0) { throw (New-PnhBuildError -Code 'hfPin' -Message (Get-PnhBuildText 'err.hfPin' @('', 'blobs missing'))) }
+    $layers = New-Object System.Collections.Generic.List[object]
+    $config = $null
+    foreach ($b in $blobs) {
+        $role = [string](Get-PnhValue $b 'role')
+        $sha = [string](Get-PnhValue $b 'sha256')
+        $size = Get-PnhValue $b 'size'
+        if (-not $sha -or $size -eq $null) { throw (New-PnhBuildError -Code 'hfPin' -Message (Get-PnhBuildText 'err.hfPin' @($role, 'sha256/size missing'))) }
+        if ($role -eq 'config') {
+            $config = @{ mediaType = 'application/vnd.docker.container.image.v1+json'; digest = ('sha256:' + $sha); size = [int64]$size }
+        } else {
+            $layers.Add(@{ mediaType = ('application/vnd.ollama.image.' + $role); digest = ('sha256:' + $sha); size = [int64]$size })
+        }
+    }
+    if (-not $config) { throw (New-PnhBuildError -Code 'hfPin' -Message (Get-PnhBuildText 'err.hfPin' @('', 'config blob missing'))) }
+    return [pscustomobject]@{ schemaVersion = 2; mediaType = 'application/vnd.docker.distribution.manifest.v2+json'; config = $config; layers = $layers.ToArray() }
+}
+
+function Test-PnhHfPins {
+    # the pinned repository blobs of every model exist with the pinned size and sha256 (fail early with 'hfPin', exit 2)
+    param([Parameter(Mandatory)]$PinFile)
+    $models = Get-PnhValue $PinFile 'models'
+    foreach ($entry in @($models)) {
+        foreach ($b in @(Get-PnhValue $entry 'blobs' @())) {
+            if ((Get-PnhValue $b 'source') -ne 'repo') { continue }
+            $role = [string](Get-PnhValue $b 'role')
+            $sha = [string](Get-PnhValue $b 'sha256')
+            $file = Get-PnhHfBlobPath -File ([string](Get-PnhValue $b 'file'))
+            if (-not [System.IO.File]::Exists($file)) {
+                throw (New-PnhBuildError -Code 'hfPin' -Message (Get-PnhBuildText 'err.hfPin' @($role, "missing file $file")))
+            }
+            $len = (Get-Item -LiteralPath $file).Length
+            if ($len -ne [int64](Get-PnhValue $b 'size')) {
+                throw (New-PnhBuildError -Code 'hfPin' -Message (Get-PnhBuildText 'err.hfPin' @($role, "size of $file is $len, pinned " + [int64](Get-PnhValue $b 'size'))))
+            }
+            $hash = (Get-FileHash -LiteralPath $file -Algorithm SHA256).Hash.ToLowerInvariant()
+            if ($hash -ne $sha) {
+                throw (New-PnhBuildError -Code 'hfPin' -Message (Get-PnhBuildText 'err.hfPin' @($role, "sha256 of $file is $hash, pinned $sha")))
+            }
+        }
+    }
+}
+
+function Set-PnhHfRepoBlobs {
+    # copies the pinned repository blobs (config, params, license) into models\blobs as sha256-<hex>; skips what is there
+    param([Parameter(Mandatory)]$Pin, [Parameter(Mandatory)]$Paths)
+    foreach ($b in @(Get-PnhValue $Pin 'blobs' @())) {
+        if ((Get-PnhValue $b 'source') -ne 'repo') { continue }
+        $sha = [string](Get-PnhValue $b 'sha256')
+        $blob = Get-PnhBlobPath -ModelsDir $Paths.Models -Digest ('sha256:' + $sha)
+        if ((Get-PnhFileLength $blob) -eq [int64](Get-PnhValue $b 'size')) { continue }
+        $src = Get-PnhHfBlobPath -File ([string](Get-PnhValue $b 'file'))
+        Write-PnhBuildLog -Message ("pinned blob " + [string](Get-PnhValue $b 'role') + ' (' + (Format-PnhBytes ([int64](Get-PnhValue $b 'size'))) + ')')
+        Copy-Item -LiteralPath $src -Destination $blob -Force
+    }
+}
+
+function Invoke-PnhHfDownload {
+    # downloads the Hugging Face GGUF files (resume, sha256, verified by Invoke-PnhDownload) into models\blobs and
+    # writes the Ollama-style manifest into models\manifests. An interrupted download leaves the "-partial" file for
+    # the next run; the manifest is written last, like the registry path, so a half-built model is never complete.
+    param([Parameter(Mandatory)]$Pin, [Parameter(Mandatory)][string]$Tag, [Parameter(Mandatory)]$Paths, [Parameter(Mandatory)]$Manifest)
+    foreach ($b in @(Get-PnhValue $Pin 'blobs' @())) {
+        if ((Get-PnhValue $b 'source') -ne 'hf') { continue }
+        $sha = [string](Get-PnhValue $b 'sha256')
+        $size = [int64](Get-PnhValue $b 'size')
+        $blob = Get-PnhBlobPath -ModelsDir $Paths.Models -Digest ('sha256:' + $sha)
+        if ((Get-PnhFileLength $blob) -eq $size) {
+            $script:PnhProgress.BlobDone[$sha] = $size
+            Update-PnhProgress -Force
+            continue
+        }
+        $role = [string](Get-PnhValue $b 'role')
+        $name = [string](Get-PnhValue $b 'name')
+        Send-PnhPhase 'phase.hf' @($name)
+        $onProgress = { param([int64]$len) $script:PnhProgress.BlobDone[$sha] = [math]::Min([int64]$len, [int64]$size); Update-PnhProgress }
+        Invoke-PnhDownload -Url (Get-PnhHfUrl -Pin $Pin -Name $name) -Destination ($blob + '-partial') `
+            -ExpectedSize $size -Sha256 $sha -OnProgress $onProgress
+        $part = $blob + '-partial'
+        $tmp = $blob + '.pnh-tmp'
+        if (Test-Path -LiteralPath $tmp) { Remove-Item -LiteralPath $tmp -Force }
+        Move-Item -LiteralPath $part -Destination $tmp -Force
+        Move-Item -LiteralPath $tmp -Destination $blob -Force
+        Write-PnhBuildLog -Message ("Hugging Face file " + $role + ' is in place and verified')
+        $script:PnhProgress.BlobDone[$sha] = $size
+        Update-PnhProgress -Force
+    }
+    $p = Split-PnhModelTag -Tag $Tag
+    $dir = [System.IO.Path]::Combine([string[]]@($Paths.Models, 'manifests', 'registry.ollama.ai', $p.Namespace, $p.Name))
+    [void](New-Item -ItemType Directory -Path $dir -Force)
+    $mp = [System.IO.Path]::Combine($dir, $p.Tag)
+    $tmp = $mp + '.pnh-tmp'
+    [System.IO.File]::WriteAllText($tmp, (ConvertTo-Json -InputObject $Manifest -Depth 5), (New-Object System.Text.UTF8Encoding($false)))
+    Move-Item -LiteralPath $tmp -Destination $mp -Force
+}
+
 function Get-PnhBlobState {
     param([Parameter(Mandatory)][string]$ModelsDir, [Parameter(Mandatory)]$Entry)
     $path = Get-PnhBlobPath -ModelsDir $ModelsDir -Digest $Entry.Digest
@@ -1366,12 +1536,22 @@ function Invoke-PnhBuild {
     $script:PnhBuildLogFile = [System.IO.Path]::Combine($script:PnhBuildLogDir, 'build.log')
     Write-PnhBuildLog -Message ("plug-n-heal builder {0}, drive {1} ({2}, {3} free), profile {4}, PowerShell {5}" -f $versions.builder.version, $root, $drive.FileSystem, (Format-PnhBytes $drive.FreeBytes), $ProfileName, $PSVersionTable.PSVersion)
 
-    # Manifests from the registry: exact sizes, catalogue check (> tolerance = refuse), what is already complete
+    # Manifests from the registry: exact sizes, catalogue check (> tolerance = refuse), what is already complete.
+    # Hugging Face models (source 'huggingface') build the same manifest from the pin in builder\hf-models.json.
     $tolerance = 1.0
     if ($versions.sizeTolerancePercent) { $tolerance = [double]$versions.sizeTolerancePercent }
+    $hfPins = $null
+    if (@($models | Where-Object { [string](Get-PnhValue $_ 'source') -eq 'huggingface' }).Count -gt 0) {
+        $hfPins = Read-PnhHfPins
+        Test-PnhHfPins -Pin $hfPins
+    }
     $plan = New-Object System.Collections.Generic.List[object]
     foreach ($m in $models) {
-        $reg = Get-PnhRegistryManifest -Tag $m.tag -Versions $versions
+        if ([string](Get-PnhValue $m 'source') -eq 'huggingface') {
+            $reg = [pscustomobject]@{ Raw = $null; Manifest = (New-PnhHfManifest -Pin (Get-PnhHfModelPin -PinFile $hfPins -Tag $m.tag)); Url = '' }
+        } else {
+            $reg = Get-PnhRegistryManifest -Tag $m.tag -Versions $versions
+        }
         $bytes = Get-PnhManifestBytes -Manifest $reg.Manifest
         if (-not (Test-PnhSizeMatch -Expected ([int64]$m.bytes) -Actual $bytes -TolerancePercent $tolerance)) {
             throw (New-PnhBuildError -Code 'sizeMismatch' -Message (Get-PnhBuildText 'err.sizeMismatch' @($m.tag, $m.bytes, $bytes)))
@@ -1418,8 +1598,14 @@ function Invoke-PnhBuild {
     Copy-PnhApp -Paths $paths -SourceDir $srcDir
     [void](Unblock-PnhDriveFiles -Paths $paths)
 
-    # Models through Ollama itself (resume and digest check included)
-    $toPull = @($plan | Where-Object { -not $_.Complete })
+    # Models: Hugging Face models straight from the pin (resume, sha256), all others through Ollama itself
+    $hfPending = @($plan | Where-Object { -not $_.Complete -and [string](Get-PnhValue $_.Entry 'source') -eq 'huggingface' })
+    foreach ($item in $hfPending) {
+        $mPin = Get-PnhHfModelPin -PinFile $hfPins -Tag $item.Tag
+        Set-PnhHfRepoBlobs -Pin $mPin -Paths $paths
+        Invoke-PnhHfDownload -Pin $mPin -Tag $item.Tag -Paths $paths -Manifest $item.Manifest
+    }
+    $toPull = @($plan | Where-Object { -not $_.Complete -and [string](Get-PnhValue $_.Entry 'source') -ne 'huggingface' })
     if ($toPull.Count -gt 0) {
         Send-PnhPhase 'phase.ollama'
         $server = Start-PnhBuildOllama -Paths $paths

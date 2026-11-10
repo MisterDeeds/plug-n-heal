@@ -8,9 +8,12 @@ benchmark numbers) is [research/modelle.md](research/modelle.md).
 
 ## 1. The ladder
 
-All models are Qwen models from the Ollama library, in GGUF format with a fixed quantisation tag, and all are
-licensed under Apache-2.0. Sizes were measured on 9 November 2026 from the Ollama registry manifests (config plus
-all layers, including the vision projector).
+All models are Qwen models, in GGUF format with a fixed quantisation tag, and all are licensed under Apache-2.0.
+Six of them come from the Ollama library; sizes were measured on 9 November 2026 from the Ollama registry manifests
+(config plus all layers, including the vision projector). The unfiltered 27B is not in the Ollama registry: it is
+the [huihui-ai abliteration](https://huggingface.co/huihui-ai/Huihui-Qwen3.8-27B-abliterated-GGUF) of the official
+27B and is pinned (files, sizes, SHA-256) in [`builder/hf-models.json`](../builder/hf-models.json) and downloaded
+from Hugging Face by the builders, which then write the Ollama-style manifest themselves.
 
 | Tag | Parameters | Size | Tier | `minVramGB` | `minRamGB` | `ctx` | `think` | Free PowerShell | Profiles |
 |---|---|---|---|---|---|---|---|---|---|
@@ -19,6 +22,7 @@ all layers, including the vision projector).
 | `qwen3.5:9b-q4_K_M` | 9.0B | 6.55 GB | 3 | 8.5 | 8 | 32768 | off | no | standard, full |
 | `qwen3.5:9b-q8_0` | 9.0B | 10.45 GB | 3 | 13 | 12 | 32768 | off | no | full |
 | `qwen3.8:27b-q4_K_M` | 27.3B | 17.74 GB | 4 | 21 | 20 | 32768 | on | yes | standard, full |
+| `qwen3.8-27b-abliterated:q4_K` | 27.3B | 17.74 GB | 4 | 2 (+ `gpuMinRamGB` 20, partial offload) | 20 | 32768 | on | yes | standard, full |
 | `qwen3.6:35b-a3b-mtp-q4_K_M` | 35.5B (3B active, MoE) | 22.62 GB | 4 | 13 (+ `gpuMinRamGB` 30, partial offload) | 24 | 32768 | on | yes | full |
 
 Sizes are decimal GB (10^9 bytes); the exact byte counts are in `models.json`. `minVramGB`, `minRamGB` and
@@ -35,14 +39,15 @@ Sizes are decimal GB (10^9 bytes); the exact byte counts are in `models.json`. `
 | `freeShell` | the model may propose its own PowerShell commands, filtered and confirmed (see [SAFETY.md](SAFETY.md)) |
 | `confirmAllChanges` | optional; every changing action needs the user's "Yes", also when the action itself would not ask. Set for the 2B (tier 1), whose tool use is weak |
 | `default` | part of the `standard` profile |
+| `source` | optional; `'huggingface'` = the model is not in the Ollama registry, the builders download its files from Hugging Face (pinned in `builder/hf-models.json`) |
 
 ### Profiles
 
 | Profile | Models | Model bytes | On the drive incl. runtime and reserve | Suggested SSD |
 |---|---|---|---|---|
 | `small` | 2B, 4B | 5,269,955,292 (5.3 GB) | about 8.1 GB | 16 GB |
-| `standard` (default) | 2B, 4B, 9B, 27B | 29,562,652,974 (29.6 GB) | about 32.4 GB | 64 GB |
-| `full` | all six | 62,633,185,479 (62.6 GB) | about 65.4 GB | 128 GB |
+| `standard` (default) | 2B, 4B, 9B, 27B, unfiltered 27B | 47,304,524,912 (47.3 GB) | about 50.1 GB | 64 GB |
+| `full` | all seven | 80,375,057,417 (80.4 GB) | about 83.2 GB | 128 GB |
 
 "On the drive" adds the unpacked Ollama runtime (2,263,717,391 bytes) and the 512 MiB reserve from
 [`builder/versions.json`](../builder/versions.json). The suggested SSD size is the smallest usual size whose
@@ -68,9 +73,16 @@ formatted capacity (about 93 %) holds it; the Windows builder computes and shows
    fallback gets its own placement (GPU or CPU) and its own `ctx` (`Get-PnhModelContext`, capped at 16384 on the CPU);
    `Select-PnhModel` returns them as `Candidates`, in step-down order.
 
+The unfiltered 27B never comes first by the rule: its `minVramGB` is 2 (the smallest VRAM at which a GPU start makes
+sense, the rest of the weights running in system RAM), so it ranks below every other entry. It is the last fallback
+on large cards and the choice when someone wants it explicitly – `Run-Headless.ps1 -Model
+qwen3.8-27b-abliterated:q4_K` – because it is a community abliteration, not an official release. If its
+`partialOffload` start is too slow, the 15 tokens/second check of tier 4 steps down the ladder like for every other
+model.
+
 `-Prefer <tag>` (used by `Run-Headless.ps1 -Model`) overrides the rule for an installed tag.
 
-Examples (from `tests/Models.Tests.ps1`, all six models installed):
+Examples (from `tests/Models.Tests.ps1`, all seven models installed):
 
 | Hardware | Model | Where |
 |---|---|---|
@@ -87,7 +99,8 @@ Examples (from `tests/Models.Tests.ps1`, all six models installed):
 | no GPU, 4 GB RAM | `qwen3.5:2b-q4_K_M` | CPU, "weak hardware" |
 | Intel Arc 16 GB, 32 GB RAM | `qwen3.5:4b-q4_K_M` | CPU (Intel counts as no GPU) |
 
-With the `standard` profile a 16 GB card gets `qwen3.5:9b-q4_K_M`, because the two `full`-only models are missing.
+With the `standard` profile a 16 GB card gets `qwen3.5:9b-q4_K_M`, because the MoE model is `full`-only and the
+unfiltered 27B never comes first by the rule.
 
 ### Step 2: measurement (`Test-PnhModelFit`)
 
@@ -122,6 +135,7 @@ the first choice).
 |---|---|---|
 | Qwen3.5 (2B, 4B, 9B) | Apache-2.0, "Copyright 2026 Alibaba Cloud" | licence layer of the registry manifest; Hugging Face cards [Qwen3.5-2B](https://huggingface.co/Qwen/Qwen3.5-2B), [Qwen3.5-4B](https://huggingface.co/Qwen/Qwen3.5-4B), [Qwen3.5-9B](https://huggingface.co/Qwen/Qwen3.5-9B) |
 | Qwen3.8 (27B) | Apache-2.0, "Copyright 2026 Alibaba Cloud" | registry licence layer; [Qwen3.8-27B](https://huggingface.co/Qwen/Qwen3.8-27B) |
+| Qwen3.8 (27B, unfiltered) | Apache-2.0 (the pinned licence file in [`builder/hf-models/`](../builder/hf-models/), the one of the base model) | [`builder/hf-models.json`](../builder/hf-models.json) (file, size, SHA-256) and the [huihui-ai GGUF card](https://huggingface.co/huihui-ai/Huihui-Qwen3.8-27B-abliterated-GGUF), based on [Qwen3.8-27B](https://huggingface.co/Qwen/Qwen3.8-27B) |
 | Qwen3.6 (35B-A3B) | Apache-2.0 (the registry licence layer has the unfilled copyright template line) | registry licence layer; [Qwen3.6-35B-A3B](https://huggingface.co/Qwen/Qwen3.6-35B-A3B) |
 
 The builder copies each model's licence layer to `PlugNHeal\licenses\models\` on the drive. See also

@@ -24,7 +24,7 @@ right now: please use the
 | `tests/Diagnose.Tests.ps1` | finding rules (`Get-PnhDiagnoseFlags`) on recorded facts, success checks; read-only diagnosis on Windows |
 | `tests/Toolbox.Tests.ps1` | parameter validation, confirmation rule, backup, run, verify, rollback, restore point reasons, deny-list |
 | `tests/Catalog.Tests.ps1` | schema and safety rules of `actions.json`, `findings.json`, `categories.json` (parser, PS7-only syntax, ASCII, deny-list, list of deleting actions) |
-| `tests/Agent.Tests.ps1` | the agent loop with scripted model answers: candidates, stop findings, read-only mode, free PowerShell filter, end conditions, summary |
+| `tests/Agent.Tests.ps1` | the agent loop with scripted model answers: candidates, stop findings, read-only mode, free PowerShell filter, persistence (nudges, refused `finish`, tried repairs, diagnosis re-run, limits, compaction, cancel), the English prompt, summary |
 | `tests/Ui.Tests.ps1` | `START.cmd` as text, `Start.ps1` and `Ui.ps1` helpers, i18n completeness (German vs English), the background job in demo mode |
 | `tests/Builder.Tests.ps1` | `Build-Drive.ps1`: paths, file system and space checks, manifests, download retry loop (mocked), `drive.json`, `README.txt` |
 
@@ -128,7 +128,8 @@ exits with `0` (all checks passed), `1` (a check failed) or `2` (could not run).
 ```
 
 Useful switches: `-ReadOnly` (look only, list what would help), `-Json` (result as JSON on stdout), `-UserText
-"..."`, `-Language de|en`, `-MaxRounds <n>`, `-NoOllamaStart -BaseUrl http://127.0.0.1:11434` (use a running Ollama).
+"..."`, `-Language de|en`, `-MaxRounds <n>` and `-MaxMinutes <n>` (the agent's hard limits, default 30 each),
+`-NoOllamaStart -BaseUrl http://127.0.0.1:11434` (use a running Ollama).
 Without `-AutoConfirm`, an interactive console asks each confirmation; a non-interactive run answers "No".
 
 No spare SSD? The builder also accepts a folder: `BUILD.cmd -NonInteractive -Drive D:\pnh-test -Profile small`

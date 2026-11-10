@@ -50,7 +50,11 @@ jobs:
       - name: Install PSScriptAnalyzer
         timeout-minutes: 5
         run: |
-          Install-Module -Name PSScriptAnalyzer -RequiredVersion 1.25.0 -Repository PSGallery -Scope CurrentUser -Force -SkipPublisherCheck
+          # The PowerShell Gallery sometimes answers 'no match' for a moment: three attempts with a pause.
+          for ($try = 1; $try -le 3; $try++) {
+            try { Install-Module -Name PSScriptAnalyzer -RequiredVersion 1.25.0 -Repository PSGallery -Scope CurrentUser -Force -SkipPublisherCheck -ErrorAction Stop; break }
+            catch { if ($try -eq 3) { throw }; Write-Warning ("Install-Module attempt $try failed: " + $_.Exception.Message); Start-Sleep -Seconds (20 * $try) }
+          }
           Get-Module -ListAvailable PSScriptAnalyzer | Select-Object Name, Version, Path | Format-Table -AutoSize | Out-String | Write-Output
 
       - name: PSScriptAnalyzer
@@ -192,7 +196,11 @@ jobs:
             $nuget = Get-PackageProvider -ListAvailable -Name NuGet -ErrorAction SilentlyContinue | Where-Object { $_.Version -ge [version]'2.8.5.201' }
             if (-not $nuget) { Install-PackageProvider -Name NuGet -MinimumVersion 2.8.5.201 -Scope CurrentUser -Force | Out-Null }
           }
-          Install-Module Pester -Force -SkipPublisherCheck -Scope CurrentUser -MinimumVersion 5.5 -MaximumVersion 5.99
+          # The PowerShell Gallery sometimes answers 'no match' for a moment: three attempts with a pause.
+          for ($try = 1; $try -le 3; $try++) {
+            try { Install-Module Pester -Force -SkipPublisherCheck -Scope CurrentUser -MinimumVersion 5.5 -MaximumVersion 5.99 -ErrorAction Stop; break }
+            catch { if ($try -eq 3) { throw }; Write-Warning ("Install-Module attempt $try failed: " + $_.Exception.Message); Start-Sleep -Seconds (20 * $try) }
+          }
           Get-Module -ListAvailable Pester | Sort-Object Version -Descending | Select-Object -First 3 Name, Version, Path | Format-Table -AutoSize | Out-String | Write-Output
 
       - name: Pester

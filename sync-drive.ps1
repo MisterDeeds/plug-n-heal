@@ -19,6 +19,7 @@
 
 .PARAMETER Drive   Drive letter of the external drive. Asked when omitted.
 .PARAMETER Model   Ollama model tag. Default: the model already noted on the drive, else qwen3.8:27b.
+.PARAMETER Effort  Reasoning effort for the model: low, medium or xhigh. Default: what the drive already notes, else xhigh.
 .PARAMETER Notes   Optional facts about the fault for the agent (saved as work\NOTES.md on the drive).
 .PARAMETER Ref     Branch, tag or commit of the repository to take the kit files from. Default: main.
 .PARAMETER Root    Advanced: use this folder instead of <drive>:\AI.
@@ -29,11 +30,12 @@ param(
     [string]$Notes = '',
     [string]$Ref = 'main',
     [string]$Repo = 'MisterDeeds/plug-n-heal',
-    [string]$Root = ''
+    [string]$Root = '',
+    [string]$Effort = ''
 )
 
 function Invoke-PnhKitSync {
-    param([string]$Drive, [string]$Model, [string]$Notes, [string]$Ref, [string]$Repo, [string]$Root)
+    param([string]$Drive, [string]$Model, [string]$Notes, [string]$Ref, [string]$Repo, [string]$Root, [string]$Effort)
 
     $ErrorActionPreference = 'Stop'
     $ProgressPreference = 'SilentlyContinue'
@@ -193,10 +195,13 @@ function Invoke-PnhKitSync {
 
     # ---------- what is already there ----------
     $kitFile = Join-Path $rootPath 'kit.json'
-    if ((-not $Model) -and (Test-Path -LiteralPath $kitFile)) {
-        try { $Model = [string]((Get-Content -LiteralPath $kitFile -Raw | ConvertFrom-Json).model) } catch { }
-    }
+    $oldKit = $null
+    if (Test-Path -LiteralPath $kitFile) { try { $oldKit = Get-Content -LiteralPath $kitFile -Raw | ConvertFrom-Json } catch { } }
+    if ((-not $Model) -and $oldKit -and $oldKit.model) { $Model = [string]$oldKit.model }
     if (-not $Model) { $Model = $DefaultModel }
+    if ((-not $Effort) -and $oldKit -and $oldKit.effort) { $Effort = [string]$oldKit.effort }
+    if (-not $Effort) { $Effort = 'xhigh' }
+    if (@('low', 'medium', 'xhigh') -notcontains $Effort) { throw ("'" + $Effort + "' is not a reasoning effort. Use low, medium or xhigh.") }
     $ollamaExe = Join-Path $rootPath 'ollama\ollama.exe'
     $codexExe = Join-Path $rootPath 'codex\bin\codex.exe'
     $modelsDir = Join-Path $rootPath 'models'
@@ -347,6 +352,7 @@ function Invoke-PnhKitSync {
     # ---------- finish ----------
     $info = [ordered]@{
         model    = $Model
+        effort   = $Effort
         ollama   = $ollamaState
         codex    = $codexState
         source   = ($Repo + '@' + $Ref)
@@ -376,4 +382,4 @@ function Invoke-PnhKitSync {
     Say ''
 }
 
-Invoke-PnhKitSync -Drive $Drive -Model $Model -Notes $Notes -Ref $Ref -Repo $Repo -Root $Root
+Invoke-PnhKitSync -Drive $Drive -Model $Model -Notes $Notes -Ref $Ref -Repo $Repo -Root $Root -Effort $Effort

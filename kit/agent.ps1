@@ -16,6 +16,7 @@
 param(
     [int]$MaxRounds = 30,
     [string]$Model = '',
+    [string]$Effort = '',
     [int]$RoundMinutes = 45,
     [int]$ContextLength = 65536,
     [int]$OllamaPort = 11434,
@@ -40,10 +41,14 @@ New-Item -ItemType Directory -Force -Path $Work, (Join-Path $Root 'codex-home') 
 
 # model: parameter, else what sync-drive.ps1 wrote into kit.json, else the default
 $KitFile = Join-Path $Root 'kit.json'
-if ((-not $Model) -and (Test-Path -LiteralPath $KitFile)) {
-    try { $Model = [string]((Get-Content -LiteralPath $KitFile -Raw | ConvertFrom-Json).model) } catch { }
-}
+$kitInfo = $null
+if (Test-Path -LiteralPath $KitFile) { try { $kitInfo = Get-Content -LiteralPath $KitFile -Raw | ConvertFrom-Json } catch { } }
+if ((-not $Model) -and $kitInfo -and $kitInfo.model) { $Model = [string]$kitInfo.model }
 if (-not $Model) { $Model = 'qwen3.8:27b' }
+# reasoning effort sent to the model. qwen3.8 in Ollama 0.40 knows low, medium (its default) and xhigh; a name the
+# model does not know falls back to its default, and models with on/off thinking just think.
+if ((-not $Effort) -and $kitInfo -and $kitInfo.effort) { $Effort = [string]$kitInfo.effort }
+if (-not $Effort) { $Effort = 'xhigh' }
 
 # the agent reads AGENTS.md from its working folder; refresh it from the kit on every start
 $mission = Join-Path $Root 'AGENTS.md'
@@ -219,10 +224,11 @@ if (-not $SkipOllama) {
 
 if (-not (Test-Path -LiteralPath $Proto)) { Set-Content -LiteralPath $Proto -Value '# Repair protocol (written by the agent and the harness)' -Encoding UTF8 }
 Log ''
-Log ('## ' + (Get-Date -Format 'yyyy-MM-dd HH:mm:ss') + ' Harness started (max ' + $MaxRounds + ' rounds, model ' + $Model + ')')
+Log ('## ' + (Get-Date -Format 'yyyy-MM-dd HH:mm:ss') + ' Harness started (max ' + $MaxRounds + ' rounds, model ' + $Model + ', reasoning effort ' + $Effort + ')')
 Say ''
 Say 'How to read this:  AI = what the model says   COMMAND = what it runs right now   -> result = what came back' DarkCyan
 Say ('Everything is also written to ' + $StatusLog) DarkCyan
+Say ('Model: ' + $Model + '   reasoning effort: ' + $Effort) DarkCyan
 
 $checkCmd = $Shell + ' -NoProfile -ExecutionPolicy Bypass -File "' + $CheckScript + '"'
 $blockCmd = $Shell + ' -NoProfile -ExecutionPolicy Bypass -File "' + $BlockerScript + '"'
@@ -292,6 +298,7 @@ why), or NEEDS_REBOOT.txt (a reboot is needed, explain why).
     Status ('ROUND ' + $round + '/' + $MaxRounds) 'The network is still broken, the agent keeps working.' 'Cyan'
     $argList = 'exec --json --oss --local-provider ollama -c model_provider=ollama' +
         ' -c model_context_window=' + $ctxCodex + ' -c model_auto_compact_token_limit=' + $ctxCompact +
+        ' -c model_reasoning_effort=' + $Effort +
         ' -m ' + $Model + ' --dangerously-bypass-approvals-and-sandbox --skip-git-repo-check' +
         ' -C "' + $Work + '" -o "' + (Join-Path $Work 'last-answer.txt') + '" -'
     $roundStart = Get-Date

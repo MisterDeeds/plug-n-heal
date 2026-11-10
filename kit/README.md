@@ -42,6 +42,7 @@ With parameters:
 | `-Drive E` | drive letter, instead of being asked |
 | `-Notes '...'` | facts about the fault for the agent; saved as `work\NOTES.md` |
 | `-Model <tag>` | another Ollama model that can call tools, for example `qwen3.5:9b-q4_K_M` (6.6 GB) for a graphics card with 8 to 12 GB |
+| `-Effort xhigh` | how hard the model thinks before each step: `low`, `medium` or `xhigh` (the default of the kit). `qwen3.8` on its own would use `medium`. Higher is slower per step and more careful. |
 | `-Ref <branch, tag or commit>` | take the kit files from another version of this repository |
 
 The drive must be exFAT or NTFS (FAT32 cannot hold files over 4 GB) and needs about 25 GB of free space.

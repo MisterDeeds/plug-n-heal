@@ -67,9 +67,11 @@ jobs:
         run: |
           if (-not (Test-Path -LiteralPath 'P:\')) { subst.exe P: (Join-Path $env:RUNNER_TEMP 'kitdrive') }
           $before = (Get-ChildItem P:\AI -Recurse -File | Measure-Object -Property Length -Sum).Sum
-          $out = ''
-          try { $out = & .\sync-drive.ps1 -Drive P -Model 'qwen3-coder:480b-a35b-fp16' -Ref $env:GITHUB_SHA -SkipSpeedTest *>&1 | Out-String } catch { $out += $_.Exception.Message }
+          # own process: the script stops with an error, which would cut off the captured output in this one
+          $out = & powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\sync-drive.ps1 -Drive P -Model 'qwen3-coder:480b-a35b-fp16' -Ref $env:GITHUB_SHA -SkipSpeedTest *>&1 | Out-String
+          $code = $LASTEXITCODE
           $out
+          if ($code -eq 0) { throw 'the sync should have failed' }
           if ($out -notmatch 'Not enough free space') { throw 'a 960 GB model was not refused' }
           if ($out -notmatch '-Model qwen3\.5:') { throw 'no smaller model was suggested' }
           $after = (Get-ChildItem P:\AI -Recurse -File | Measure-Object -Property Length -Sum).Sum

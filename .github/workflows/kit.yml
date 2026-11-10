@@ -90,8 +90,8 @@ jobs:
           $sw = [System.Diagnostics.Stopwatch]::StartNew()
           $out = & .\sync-drive.ps1 -Drive P -Ref $env:GITHUB_SHA *>&1 | Out-String
           $out
-          $n = ([regex]::Matches($out, 'already on the drive')).Count
-          if ($n -ne 3) { throw "expected 3 'already on the drive' lines, got $n" }
+          $n = ([regex]::Matches($out, 'not downloaded again')).Count
+          if ($n -ne 3) { throw "expected 3 'not downloaded again' lines, got $n" }
           if ($out -notmatch '0 updated') { throw 'kit files should be unchanged on the second run' }
           if ($sw.Elapsed.TotalSeconds -gt 120) { throw 'the second sync took too long' }
           $kit = Get-Content P:\AI\kit.json -Raw | ConvertFrom-Json

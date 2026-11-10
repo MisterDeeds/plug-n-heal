@@ -67,7 +67,9 @@ jobs:
         run: |
           if (-not (Test-Path -LiteralPath 'P:\')) { subst.exe P: (Join-Path $env:RUNNER_TEMP 'kitdrive') }
           $before = (Get-ChildItem P:\AI -Recurse -File | Measure-Object -Property Length -Sum).Sum
-          # own process: the script stops with an error, which would cut off the captured output in this one
+          # own process: the script stops with an error, which would cut off the captured output in this one.
+          # GitHub runs PowerShell steps with ErrorActionPreference Stop; the child's error line must not end this step.
+          $ErrorActionPreference = 'Continue'
           $out = & powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\sync-drive.ps1 -Drive P -Model 'qwen3-coder:480b-a35b-fp16' -Ref $env:GITHUB_SHA -SkipSpeedTest *>&1 | Out-String
           $code = $LASTEXITCODE
           $out
